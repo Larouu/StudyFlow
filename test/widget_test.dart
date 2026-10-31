@@ -20,6 +20,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Tasks workspace'), findsOneWidget);
-    expect(find.text('Manage tasks in one collaborative workspace.'), findsOneWidget);
+    expect(
+      find.text('Manage tasks in one collaborative workspace.'),
+      findsOneWidget,
+    );
   });
 }

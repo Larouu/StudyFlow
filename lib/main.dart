@@ -173,7 +173,9 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
     return IconButton(
       tooltip: 'Toggle theme',
       onPressed: () => setState(() => _darkMode = !_darkMode),
-      icon: Icon(_darkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+      icon: Icon(
+        _darkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+      ),
     );
   }
 
@@ -199,7 +201,10 @@ class _Dashboard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Good morning, Alex', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
+                  Text(
+                    'Good morning, Alex',
+                    style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+                  ),
                   SizedBox(height: 8),
                   Text('Here is what is happening with your teams today.'),
                 ],
@@ -216,7 +221,11 @@ class _Dashboard extends StatelessWidget {
         const SizedBox(height: 30),
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = constraints.maxWidth > 900 ? 4 : constraints.maxWidth > 550 ? 2 : 1;
+            final columns = constraints.maxWidth > 900
+                ? 4
+                : constraints.maxWidth > 550
+                ? 2
+                : 1;
             return GridView.count(
               crossAxisCount: columns,
               shrinkWrap: true,
@@ -225,10 +234,30 @@ class _Dashboard extends StatelessWidget {
               crossAxisSpacing: 14,
               childAspectRatio: 2.2,
               children: const [
-                MetricCard('Active projects', '4', Icons.rocket_launch_outlined, Color(0xFFE7EEFF)),
-                MetricCard('Tasks completed', '68%', Icons.check_circle_outline, Color(0xFFE1F7EE)),
-                MetricCard('Due this week', '7', Icons.schedule_outlined, Color(0xFFFFF1D9)),
-                MetricCard('Team members', '12', Icons.groups_outlined, Color(0xFFF5E7FF)),
+                MetricCard(
+                  'Active projects',
+                  '4',
+                  Icons.rocket_launch_outlined,
+                  Color(0xFFE7EEFF),
+                ),
+                MetricCard(
+                  'Tasks completed',
+                  '68%',
+                  Icons.check_circle_outline,
+                  Color(0xFFE1F7EE),
+                ),
+                MetricCard(
+                  'Due this week',
+                  '7',
+                  Icons.schedule_outlined,
+                  Color(0xFFFFF1D9),
+                ),
+                MetricCard(
+                  'Team members',
+                  '12',
+                  Icons.groups_outlined,
+                  Color(0xFFF5E7FF),
+                ),
               ],
             );
           },
@@ -268,9 +297,24 @@ class _Dashboard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _ProjectRow('StudyFlow mobile app', '12 tasks', 0.72, const Color(0xFF3157D5)),
-          _ProjectRow('Data structures course', '8 tasks', 0.45, const Color(0xFF7C5CFC)),
-          _ProjectRow('Hackathon 2026', '5 tasks', 0.88, const Color(0xFF10A873)),
+          _ProjectRow(
+            'StudyFlow mobile app',
+            '12 tasks',
+            0.72,
+            const Color(0xFF3157D5),
+          ),
+          _ProjectRow(
+            'Data structures course',
+            '8 tasks',
+            0.45,
+            const Color(0xFF7C5CFC),
+          ),
+          _ProjectRow(
+            'Hackathon 2026',
+            '5 tasks',
+            0.88,
+            const Color(0xFF10A873),
+          ),
         ],
       ),
     );
@@ -282,9 +326,24 @@ class _Dashboard extends StatelessWidget {
       action: TextButton(onPressed: () {}, child: const Text('Calendar')),
       child: const Column(
         children: [
-          _DeadlineRow('UX review', 'Today, 4:00 PM', Icons.design_services_outlined, Color(0xFFFF8A65)),
-          _DeadlineRow('Sprint demo', 'Tomorrow, 10:00 AM', Icons.present_to_all_outlined, Color(0xFF7C5CFC)),
-          _DeadlineRow('Final report', 'Friday, Nov 6', Icons.description_outlined, Color(0xFF10A873)),
+          _DeadlineRow(
+            'UX review',
+            'Today, 4:00 PM',
+            Icons.design_services_outlined,
+            Color(0xFFFF8A65),
+          ),
+          _DeadlineRow(
+            'Sprint demo',
+            'Tomorrow, 10:00 AM',
+            Icons.present_to_all_outlined,
+            Color(0xFF7C5CFC),
+          ),
+          _DeadlineRow(
+            'Final report',
+            'Friday, Nov 6',
+            Icons.description_outlined,
+            Color(0xFF10A873),
+          ),
         ],
       ),
     );
@@ -303,22 +362,38 @@ class ModulePage extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(module.icon, size: 30, color: Theme.of(context).colorScheme.primary),
+            Icon(
+              module.icon,
+              size: 30,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             const SizedBox(width: 14),
-            Text(module.name, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+            Text(
+              module.name,
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+            ),
           ],
         ),
         const SizedBox(height: 10),
-        Text('Manage ${module.name.toLowerCase()} in one collaborative workspace.'),
+        Text(
+          'Manage ${module.name.toLowerCase()} in one collaborative workspace.',
+        ),
         const SizedBox(height: 28),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(28),
             child: Column(
               children: [
-                Icon(module.icon, size: 56, color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  module.icon,
+                  size: 56,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(height: 14),
-                Text('${module.name} workspace', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  '${module.name} workspace',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 8),
                 const Text(
                   'This module is connected to the StudyFlow domain model. '
@@ -329,7 +404,9 @@ class ModulePage extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: () {},
                   icon: const Icon(Icons.add),
-                  label: Text('Create ${module.name == 'Calendar & reports' ? 'event' : 'new item'}'),
+                  label: Text(
+                    'Create ${module.name == 'Calendar & reports' ? 'event' : 'new item'}',
+                  ),
                 ),
               ],
             ),
@@ -361,7 +438,13 @@ class MetricCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
                 Text(label),
               ],
             ),
@@ -373,7 +456,11 @@ class MetricCard extends StatelessWidget {
 }
 
 class _Panel extends StatelessWidget {
-  const _Panel({required this.title, required this.action, required this.child});
+  const _Panel({
+    required this.title,
+    required this.action,
+    required this.child,
+  });
   final String title;
   final Widget action;
   final Widget child;
@@ -387,7 +474,13 @@ class _Panel extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const Spacer(),
                 action,
               ],
@@ -416,14 +509,24 @@ class _ProjectRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w600))),
+              Expanded(
+                child: Text(
+                  name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
               Text(tasks, style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(width: 12),
               Text('${(progress * 100).round()}%'),
             ],
           ),
           const SizedBox(height: 8),
-          LinearProgressIndicator(value: progress, color: color, minHeight: 7, borderRadius: BorderRadius.circular(8)),
+          LinearProgressIndicator(
+            value: progress,
+            color: color,
+            minHeight: 7,
+            borderRadius: BorderRadius.circular(8),
+          ),
         ],
       ),
     );
