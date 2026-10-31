@@ -41,6 +41,8 @@ class StudyFlowShell extends StatefulWidget {
 class _StudyFlowShellState extends State<StudyFlowShell> {
   int _selectedIndex = 0;
   bool _darkMode = false;
+  final List<String> _teams = ['StudyFlow team'];
+  final List<String> _projects = ['StudyFlow mobile app'];
 
   static const _modules = <ModuleItem>[
     ModuleItem('Overview', Icons.grid_view_rounded),
@@ -86,8 +88,19 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
             if (!isCompact) _buildRail(context),
             Expanded(
               child: _selectedIndex == 0
-                  ? _Dashboard(onOpenModule: _selectModule)
-                  : ModulePage(module: _modules[_selectedIndex]),
+                  ? _Dashboard(
+                      onOpenModule: _selectModule,
+                      onCreateProject: _createProject,
+                    )
+                  : ModulePage(
+                      module: _modules[_selectedIndex],
+                      items: _selectedIndex == 1 ? _teams : _projects,
+                      onCreate: _selectedIndex == 1
+                          ? _createTeam
+                          : _selectedIndex == 2
+                          ? _createProject
+                          : null,
+                    ),
             ),
           ],
         ),
@@ -180,12 +193,53 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
   }
 
   void _selectModule(int index) => setState(() => _selectedIndex = index);
+
+  Future<void> _createTeam() async {
+    final name = await _askForName('Create a team', 'Team name');
+    if (name != null) setState(() => _teams.add(name));
+  }
+
+  Future<void> _createProject() async {
+    final name = await _askForName('Create a project', 'Project name');
+    if (name != null) setState(() => _projects.add(name));
+  }
+
+  Future<String?> _askForName(String title, String label) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(labelText: label),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(context, controller.text.trim());
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    return result;
+  }
 }
 
 class _Dashboard extends StatelessWidget {
-  const _Dashboard({required this.onOpenModule});
+  const _Dashboard({required this.onOpenModule, required this.onCreateProject});
 
   final ValueChanged<int> onOpenModule;
+  final VoidCallback onCreateProject;
 
   @override
   Widget build(BuildContext context) {
@@ -212,9 +266,9 @@ class _Dashboard extends StatelessWidget {
             ),
             if (width >= 600)
               FilledButton.icon(
-                onPressed: null,
-                icon: Icon(Icons.add),
-                label: Text('New item'),
+                onPressed: onCreateProject,
+                icon: const Icon(Icons.add),
+                label: const Text('New project'),
               ),
           ],
         ),
@@ -351,9 +405,16 @@ class _Dashboard extends StatelessWidget {
 }
 
 class ModulePage extends StatelessWidget {
-  const ModulePage({required this.module, super.key});
+  const ModulePage({
+    required this.module,
+    required this.items,
+    this.onCreate,
+    super.key,
+  });
 
   final ModuleItem module;
+  final List<String> items;
+  final VoidCallback? onCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -379,6 +440,20 @@ class ModulePage extends StatelessWidget {
           'Manage ${module.name.toLowerCase()} in one collaborative workspace.',
         ),
         const SizedBox(height: 28),
+        if (items.isNotEmpty)
+          Card(
+            child: Column(
+              children: [
+                for (final item in items)
+                  ListTile(
+                    leading: Icon(module.icon),
+                    title: Text(item),
+                    trailing: const Icon(Icons.chevron_right),
+                  ),
+              ],
+            ),
+          ),
+        if (items.isNotEmpty) const SizedBox(height: 18),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(28),
@@ -402,10 +477,14 @@ class ModulePage extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
                 FilledButton.icon(
-                  onPressed: () {},
+                  onPressed: onCreate,
                   icon: const Icon(Icons.add),
                   label: Text(
-                    'Create ${module.name == 'Calendar & reports' ? 'event' : 'new item'}',
+                    module.name == 'Teams'
+                        ? 'Create team'
+                        : module.name == 'Projects'
+                        ? 'Create project'
+                        : 'Create ${module.name == 'Calendar & reports' ? 'event' : 'new item'}',
                   ),
                 ),
               ],
