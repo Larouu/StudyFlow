@@ -29,3 +29,6 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/database_schema.md](docs/database_schema.md), and
 [docs/ai_ml_architecture.md](docs/ai_ml_architecture.md) for the implementation
 boundaries and data contracts.
+
+The PDF-to-code mapping is tracked in
+[docs/requirements_traceability.md](docs/requirements_traceability.md).
