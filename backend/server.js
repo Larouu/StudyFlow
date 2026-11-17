@@ -983,6 +983,64 @@ app.post('/api/mobile/sync', async (req, res) => {
         return res.json({ ok: true, data: member });
       }
 
+      case 'UPDATE_MEMBER_ROLE': {
+        if (role !== 'OWNER' && role !== 'ADMIN') {
+          return res.status(403).json({ ok: false, error: 'Seul un propriétaire ou administrateur peut modifier les rôles.' });
+        }
+        const { targetUserId, newRole } = payload;
+        if (!targetUserId || !newRole) {
+          return res.status(400).json({ ok: false, error: 'Paramètres manquants.' });
+        }
+        if (targetUserId === userId) {
+          return res.status(400).json({ ok: false, error: 'Vous ne pouvez pas modifier votre propre rôle.' });
+        }
+        const teamId = await getUserTeamId(userId);
+        if (!teamId) {
+          return res.status(400).json({ ok: false, error: 'Aucune équipe active.' });
+        }
+        const targetMember = await prisma.teamMember.findUnique({
+          where: { teamId_userId: { teamId, userId: targetUserId } },
+        });
+        if (!targetMember) {
+          return res.status(404).json({ ok: false, error: 'Membre introuvable dans cette équipe.' });
+        }
+        if (targetMember.role === 'OWNER' && role !== 'OWNER') {
+          return res.status(403).json({ ok: false, error: 'Un administrateur ne peut pas modifier le rôle du propriétaire.' });
+        }
+        const updated = await prisma.teamMember.update({
+          where: { teamId_userId: { teamId, userId: targetUserId } },
+          data: { role: newRole },
+        });
+        return res.json({ ok: true, data: updated });
+      }
+
+      case 'REMOVE_MEMBER': {
+        if (role !== 'OWNER' && role !== 'ADMIN') {
+          return res.status(403).json({ ok: false, error: 'Seul un propriétaire ou administrateur peut retirer un membre.' });
+        }
+        const { targetUserId } = payload;
+        if (!targetUserId || targetUserId === userId) {
+          return res.status(400).json({ ok: false, error: 'Impossible de vous retirer vous-même.' });
+        }
+        const teamId = await getUserTeamId(userId);
+        if (!teamId) {
+          return res.status(400).json({ ok: false, error: 'Aucune équipe active.' });
+        }
+        const targetMember = await prisma.teamMember.findUnique({
+          where: { teamId_userId: { teamId, userId: targetUserId } },
+        });
+        if (!targetMember) {
+          return res.status(404).json({ ok: false, error: 'Membre introuvable.' });
+        }
+        if (targetMember.role === 'OWNER') {
+          return res.status(403).json({ ok: false, error: 'Le propriétaire ne peut pas être retiré de l\'équipe.' });
+        }
+        await prisma.teamMember.delete({
+          where: { teamId_userId: { teamId, userId: targetUserId } },
+        });
+        return res.json({ ok: true });
+      }
+
       // --- FICHIERS (M6) ---
       case 'UPLOAD_FILE': {
         if (isCoachOrViewer) {

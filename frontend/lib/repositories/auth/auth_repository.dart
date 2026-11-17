@@ -61,5 +61,11 @@ class AuthRepository {
 
   Future<bool> inviteMember(String userId, String email, {String role = 'MEMBER'}) =>
       _api.auth.inviteMember(userId, email, role: role);
+
+  Future<bool> updateMemberRole(String userId, String targetUserId, String newRole) =>
+      _api.auth.updateMemberRole(userId, targetUserId, newRole);
+
+  Future<bool> removeMember(String userId, String targetUserId) =>
+      _api.auth.removeMember(userId, targetUserId);
 }
 

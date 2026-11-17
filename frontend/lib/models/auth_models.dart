@@ -49,6 +49,14 @@ class AppUser {
   bool get isCoach => role == UserRole.coach;
   bool get canEditTasks => !isCoachOrViewer;
 
+  AppUser copyWith({UserRole? role}) => AppUser(
+        id: id,
+        name: name,
+        email: email,
+        avatar: avatar,
+        role: role ?? this.role,
+      );
+
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
         id: json['id']?.toString() ?? '',
         name: json['name']?.toString() ?? 'Utilisateur',

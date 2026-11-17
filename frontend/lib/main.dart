@@ -101,7 +101,7 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
   static const _destinations = <(String label, IconData icon)>[
     ('Kanban', Icons.view_kanban_rounded),
     ('Tâches', Icons.check_circle_outline_rounded),
-    ('Agenda & Stats', Icons.calendar_month_rounded),
+    ('Agenda', Icons.calendar_month_rounded),
     ('Chat', Icons.forum_outlined),
     ('Fichiers', Icons.folder_outlined),
     ('Formations', Icons.school_outlined),

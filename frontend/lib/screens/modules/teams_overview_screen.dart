@@ -109,6 +109,9 @@ class TeamsOverviewScreen extends StatelessWidget {
         const SizedBox(height: 10),
         ...store.users.map((u) {
           final isCurrent = u.id == activeUser.id;
+          final canEditThisMember = canInvite &&
+              !isCurrent &&
+              !(u.role == UserRole.owner && activeUser.role != UserRole.owner);
           return Card(
             margin: const EdgeInsets.only(bottom: 10),
             child: ListTile(
@@ -121,14 +124,89 @@ class TeamsOverviewScreen extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               subtitle: Text(u.email, style: const TextStyle(fontSize: 12)),
-              trailing: Chip(
-                label: Text(roleToString(u.role), style: const TextStyle(fontSize: 11)),
-                visualDensity: VisualDensity.compact,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (canEditThisMember)
+                    PopupMenuButton<UserRole>(
+                      tooltip: 'Changer le rôle',
+                      onSelected: (newRole) async {
+                        final ok = await store.updateMemberRole(u.id, newRole);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? 'Rôle de ${u.name} mis à jour (${roleToString(newRole)}).'
+                                  : 'Impossible de modifier ce rôle.',
+                            ),
+                          ),
+                        );
+                      },
+                      itemBuilder: (_) => [
+                        if (activeUser.role == UserRole.owner)
+                          const PopupMenuItem(value: UserRole.owner, child: Text('OWNER')),
+                        const PopupMenuItem(value: UserRole.admin, child: Text('ADMIN')),
+                        const PopupMenuItem(value: UserRole.member, child: Text('MEMBER')),
+                        const PopupMenuItem(value: UserRole.coach, child: Text('COACH')),
+                        const PopupMenuItem(value: UserRole.viewer, child: Text('VIEWER')),
+                      ],
+                      child: Chip(
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(roleToString(u.role), style: const TextStyle(fontSize: 11)),
+                            const SizedBox(width: 2),
+                            const Icon(Icons.arrow_drop_down, size: 15),
+                          ],
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    )
+                  else
+                    Chip(
+                      label: Text(roleToString(u.role), style: const TextStyle(fontSize: 11)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (canEditThisMember && u.role != UserRole.owner)
+                    IconButton(
+                      tooltip: 'Retirer de l\'équipe',
+                      icon: const Icon(Icons.person_remove_outlined, size: 18, color: Colors.redAccent),
+                      onPressed: () => _confirmRemoveMember(context, u),
+                    ),
+                ],
               ),
             ),
           );
         }),
       ],
+    );
+  }
+
+  void _confirmRemoveMember(BuildContext context, AppUser member) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Retirer un membre'),
+        content: Text('Voulez-vous vraiment retirer ${member.name} de l\'équipe ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final ok = await store.removeMember(member.id);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(ok ? '${member.name} retiré de l\'équipe.' : 'Action impossible.'),
+                ),
+              );
+            },
+            child: const Text('Retirer'),
+          ),
+        ],
+      ),
     );
   }
 

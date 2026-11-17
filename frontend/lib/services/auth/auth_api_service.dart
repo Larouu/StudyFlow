@@ -32,6 +32,12 @@ class AuthApiService {
   Future<bool> inviteMember(String userId, String email, {String role = 'MEMBER'}) =>
       _sync('INVITE_MEMBER', userId, {'email': email, 'role': role});
 
+  Future<bool> updateMemberRole(String userId, String targetUserId, String newRole) =>
+      _sync('UPDATE_MEMBER_ROLE', userId, {'targetUserId': targetUserId, 'newRole': newRole});
+
+  Future<bool> removeMember(String userId, String targetUserId) =>
+      _sync('REMOVE_MEMBER', userId, {'targetUserId': targetUserId});
+
   Future<bool> _sync(String action, String userId, Map<String, dynamic> payload) async {
     try {
       final res = await _client.postJson('/api/mobile/sync', {

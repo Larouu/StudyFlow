@@ -1,3 +1,4 @@
+import '../../core/models/studyflow_models.dart';
 import '../studyflow_provider_base.dart';
 
 /// Provider du domaine Authentification & Équipe.
@@ -85,6 +86,38 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
   Future<bool> inviteMember(String email, {String role = 'MEMBER'}) async {
     if (currentUser == null || email.trim().isEmpty) return false;
     final ok = await authRepository.inviteMember(currentUser!.id, email.trim(), role: role);
+    if (ok) {
+      await hydrateFromPrisma();
+    }
+    return ok;
+  }
+
+  Future<bool> updateMemberRole(String targetUserId, UserRole newRole) async {
+    if (currentUser == null) return false;
+    if (currentUser!.role != UserRole.owner && currentUser!.role != UserRole.admin) return false;
+    users = users
+        .map((u) => u.id == targetUserId ? u.copyWith(role: newRole) : u)
+        .toList();
+    notifyListeners();
+
+    final ok = await authRepository.updateMemberRole(
+      currentUser!.id,
+      targetUserId,
+      roleToString(newRole),
+    );
+    if (ok) {
+      await hydrateFromPrisma();
+    }
+    return ok;
+  }
+
+  Future<bool> removeMember(String targetUserId) async {
+    if (currentUser == null || targetUserId == currentUser!.id) return false;
+    if (currentUser!.role != UserRole.owner && currentUser!.role != UserRole.admin) return false;
+    users = users.where((u) => u.id != targetUserId).toList();
+    notifyListeners();
+
+    final ok = await authRepository.removeMember(currentUser!.id, targetUserId);
     if (ok) {
       await hydrateFromPrisma();
     }
