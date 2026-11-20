@@ -15,7 +15,7 @@ class StudyFlowSeedData {
       name: 'Karim Belkacem',
       email: 'karim.belkacem@univ-etudiant.fr',
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-      role: UserRole.admin,
+      role: UserRole.owner,
     ),
     AppUser(
       id: 'user-3',

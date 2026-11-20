@@ -9,6 +9,7 @@ const assistant = require('./assistant');
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const app = express();
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -23,6 +24,10 @@ const prisma = new PrismaClient({
   },
 });
 const PORT = process.env.PORT || 3000;
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(String(password)).digest('hex');
+}
 
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '25mb' }));
@@ -64,26 +69,59 @@ app.post('/api/mobile/auth', async (req, res) => {
         data: {
           name: name.trim(),
           email: normalizedEmail,
+          passwordHash: hashPassword(password),
           image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
         },
       });
 
       const normalizedInviteToken = (inviteToken || '').trim();
-      if (!normalizedInviteToken) {
-        await prisma.user.delete({ where: { id: user.id } });
-        return res.status(400).json({ ok: false, error: 'Code d’invitation requis pour rejoindre une équipe.' });
-      }
-
-      const team = await prisma.team.findUnique({
-        where: { inviteToken: normalizedInviteToken },
-      });
-      if (!team) {
-        await prisma.user.delete({ where: { id: user.id } });
-        return res.status(404).json({ ok: false, error: 'Code d’invitation invalide.' });
+      let team;
+      let role = 'MEMBER';
+      if (normalizedInviteToken) {
+        team = await prisma.team.findUnique({ where: { inviteToken: normalizedInviteToken } });
+        if (!team) {
+          await prisma.user.delete({ where: { id: user.id } });
+          return res.status(404).json({ ok: false, error: 'Code d’invitation invalide.' });
+        }
+      } else {
+        const projectName = (req.body.projectName || '').trim();
+        if (!projectName) {
+          await prisma.user.delete({ where: { id: user.id } });
+          return res.status(400).json({ ok: false, error: 'Nom du projet requis pour créer une équipe.' });
+        }
+        const suffix = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        const inviteCode = `SF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        team = await prisma.team.create({
+          data: {
+            name: `Équipe ${projectName}`,
+            slug: `team-${suffix}`,
+            ownerId: user.id,
+            inviteToken: inviteCode,
+          },
+        });
+        role = 'OWNER';
+        const project = await prisma.project.create({
+          data: {
+            teamId: team.id,
+            name: projectName,
+            description: (req.body.projectDescription || '').trim() || null,
+            color: (req.body.projectColor || '#4f46e5').slice(0, 7),
+          },
+        });
+        await prisma.column.createMany({
+          data: [
+            { projectId: project.id, name: 'À faire', position: 1000, isDone: false },
+            { projectId: project.id, name: 'En cours', position: 2000, wipLimit: 3, isDone: false },
+            { projectId: project.id, name: 'Terminé', position: 3000, isDone: true },
+          ],
+        });
+        await prisma.channel.create({
+          data: { teamId: team.id, projectId: project.id, name: 'Général', type: 'PROJECT' },
+        });
       }
 
       await prisma.teamMember.create({
-        data: { teamId: team.id, userId: user.id, role: 'MEMBER' },
+        data: { teamId: team.id, userId: user.id, role },
       });
 
       notifyUser(user.id, 'welcome', {});
@@ -95,7 +133,7 @@ app.post('/api/mobile/auth', async (req, res) => {
           name: user.name,
           email: user.email,
           avatar: user.image,
-          role: 'MEMBER',
+          role,
         },
       });
     }
@@ -112,6 +150,10 @@ app.post('/api/mobile/auth', async (req, res) => {
 
     if (!user) {
       return res.status(401).json({ ok: false, error: 'Identifiants incorrects. Aucun compte trouvé.' });
+    }
+
+    if (user.passwordHash && user.passwordHash !== hashPassword(password)) {
+      return res.status(401).json({ ok: false, error: 'Mot de passe incorrect.' });
     }
 
     return res.json({
@@ -352,7 +394,7 @@ app.post('/api/mobile/sync', async (req, res) => {
     }
 
     const role = await getUserRole(userId);
-    const isCoachOrViewer = role === 'COACH' || role === 'VIEWER';
+    const isCoachOrViewer = role === 'COACH';
 
     switch (action) {
       // --- CRÉATION DE TÂCHE ---
@@ -791,7 +833,7 @@ app.post('/api/mobile/sync', async (req, res) => {
 
       // --- PROJETS (M2) ---
       case 'CREATE_PROJECT': {
-        if (isCoachOrViewer || (role !== 'OWNER' && role !== 'ADMIN')) {
+        if (isCoachOrViewer || role !== 'OWNER') {
           return res.status(403).json({ ok: false, error: 'Permission refusée (§4.2)' });
         }
         const { name, description, color, teamId } = payload;
@@ -815,7 +857,7 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'UPDATE_PROJECT': {
-        if (isCoachOrViewer || (role !== 'OWNER' && role !== 'ADMIN')) {
+        if (isCoachOrViewer || role !== 'OWNER') {
           return res.status(403).json({ ok: false, error: 'Permission refusée (§4.2)' });
         }
         const { projectId, name, description, color } = payload;
@@ -831,7 +873,7 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'DELETE_PROJECT': {
-        if (isCoachOrViewer || (role !== 'OWNER' && role !== 'ADMIN')) {
+        if (isCoachOrViewer || role !== 'OWNER') {
           return res.status(403).json({ ok: false, error: 'Seul le propriétaire ou l’administrateur peut supprimer un projet.' });
         }
         const { projectId } = payload;
@@ -869,7 +911,7 @@ app.post('/api/mobile/sync', async (req, res) => {
       case 'DELETE_MESSAGE': {
         const { messageId } = payload;
         const existing = await prisma.message.findUnique({ where: { id: messageId } });
-        const canModerate = role === 'OWNER' || role === 'ADMIN' || role === 'COACH';
+        const canModerate = role === 'OWNER' || role === 'COACH';
         if (!existing || (existing.authorId !== userId && !canModerate)) {
           return res.status(403).json({ ok: false, error: 'Permission refusée pour supprimer ce message.' });
         }
@@ -912,14 +954,19 @@ app.post('/api/mobile/sync', async (req, res) => {
 
       // --- FORMATIONS, COACHING, OBJECTIFS & COMPÉTENCES (M7) ---
       case 'CREATE_TRAINING': {
-        const canManage = role === 'COACH' || role === 'ADMIN' || role === 'OWNER';
+        const canManage = role === 'COACH' || role === 'OWNER';
         if (!canManage) {
           return res.status(403).json({ ok: false, error: 'Permission refusée' });
         }
         const { title, description, skill, level, capacity, mode, location, startsAt, endsAt } = payload;
         const resolvedTeamId = (await getUserTeamId(userId)) || 'team-1';
+        const trainingId = `training-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const meetingUrl = mode === 'ONLINE'
+          ? `https://meet.jit.si/studyflow-${trainingId.replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`
+          : null;
         const training = await prisma.training.create({
           data: {
+            id: trainingId,
             teamId: resolvedTeamId,
             trainerId: userId,
             title: title.trim(),
@@ -929,6 +976,7 @@ app.post('/api/mobile/sync', async (req, res) => {
             capacity: Number(capacity) || 10,
             mode: mode || 'ONLINE',
             location: location || null,
+            meetingUrl,
             startsAt: startsAt ? new Date(startsAt) : new Date(Date.now() + 86400000),
             endsAt: endsAt ? new Date(endsAt) : new Date(Date.now() + 90000000),
           },
@@ -937,7 +985,7 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'UPDATE_TRAINING': {
-        const canManage = role === 'COACH' || role === 'ADMIN' || role === 'OWNER';
+        const canManage = role === 'COACH' || role === 'OWNER';
         if (!canManage) {
           return res.status(403).json({ ok: false, error: 'Permission refusée' });
         }
@@ -960,7 +1008,7 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'DELETE_TRAINING': {
-        const canManage = role === 'COACH' || role === 'ADMIN' || role === 'OWNER';
+        const canManage = role === 'COACH' || role === 'OWNER';
         if (!canManage) {
           return res.status(403).json({ ok: false, error: 'Permission refusée' });
         }
@@ -970,7 +1018,7 @@ app.post('/api/mobile/sync', async (req, res) => {
 
       case 'DELETE_COACHING': {
         const existing = await prisma.coachingSession.findUnique({ where: { id: payload.sessionId } });
-        if (!existing || (existing.coachId !== userId && existing.coacheeId !== userId && role !== 'OWNER' && role !== 'ADMIN')) {
+        if (!existing || (existing.coachId !== userId && existing.coacheeId !== userId && role !== 'OWNER')) {
           return res.status(403).json({ ok: false, error: 'Permission refusée' });
         }
         await prisma.coachingSession.delete({ where: { id: payload.sessionId } });
@@ -1032,8 +1080,8 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'INVITE_MEMBER': {
-        if (role !== 'OWNER' && role !== 'ADMIN') {
-          return res.status(403).json({ ok: false, error: 'Seul un propriétaire ou administrateur peut inviter.' });
+        if (role !== 'OWNER') {
+          return res.status(403).json({ ok: false, error: 'Seul le propriétaire peut inviter des membres.' });
         }
         const targetEmail = (payload.email || '').trim().toLowerCase();
         const targetRole = payload.role || 'MEMBER';
@@ -1069,19 +1117,16 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'UPDATE_MEMBER_ROLE': {
-        if (role !== 'OWNER' && role !== 'ADMIN') {
-          return res.status(403).json({ ok: false, error: 'Seul un propriétaire ou administrateur peut modifier les rôles.' });
+        if (role !== 'OWNER') {
+          return res.status(403).json({ ok: false, error: 'Seul le propriétaire peut modifier les rôles.' });
         }
         const { targetUserId, newRole } = payload;
         if (!targetUserId || !newRole) {
           return res.status(400).json({ ok: false, error: 'Paramètres manquants.' });
         }
-        const allowedRoles = ['OWNER', 'ADMIN', 'MEMBER', 'COACH', 'VIEWER'];
+        const allowedRoles = ['OWNER', 'MEMBER', 'COACH'];
         if (!allowedRoles.includes(newRole)) {
           return res.status(400).json({ ok: false, error: 'Rôle invalide.' });
-        }
-        if (role === 'ADMIN' && newRole === 'OWNER') {
-          return res.status(403).json({ ok: false, error: 'Seul le propriétaire peut attribuer le rôle OWNER.' });
         }
         if (targetUserId === userId) {
           return res.status(400).json({ ok: false, error: 'Vous ne pouvez pas modifier votre propre rôle.' });
@@ -1107,8 +1152,8 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'REMOVE_MEMBER': {
-        if (role !== 'OWNER' && role !== 'ADMIN') {
-          return res.status(403).json({ ok: false, error: 'Seul un propriétaire ou administrateur peut retirer un membre.' });
+        if (role !== 'OWNER') {
+          return res.status(403).json({ ok: false, error: 'Seul le propriétaire peut retirer un membre.' });
         }
         const { targetUserId } = payload;
         if (!targetUserId || targetUserId === userId) {

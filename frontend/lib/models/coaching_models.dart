@@ -12,6 +12,7 @@ class TrainingItem {
     required this.capacity,
     required this.mode,
     this.location,
+    this.meetingUrl,
   });
 
   final String id;
@@ -26,6 +27,7 @@ class TrainingItem {
   final int capacity;
   final String mode;
   final String? location;
+  final String? meetingUrl;
 
   TrainingItem copyWith({
     String? title,
@@ -35,6 +37,7 @@ class TrainingItem {
     int? capacity,
     String? mode,
     String? location,
+    String? meetingUrl,
     DateTime? startsAt,
     DateTime? endsAt,
   }) =>
@@ -51,6 +54,7 @@ class TrainingItem {
         capacity: capacity ?? this.capacity,
         mode: mode ?? this.mode,
         location: location ?? this.location,
+        meetingUrl: meetingUrl ?? this.meetingUrl,
       );
 
   factory TrainingItem.fromJson(Map<String, dynamic> json) => TrainingItem(
@@ -66,6 +70,7 @@ class TrainingItem {
         capacity: (json['capacity'] as num?)?.toInt() ?? 10,
         mode: json['mode']?.toString() ?? 'ONLINE',
         location: json['location']?.toString(),
+        meetingUrl: json['meetingUrl']?.toString(),
       );
 }
 

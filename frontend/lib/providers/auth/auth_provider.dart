@@ -33,12 +33,28 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
     return true;
   }
 
-  Future<bool> register(String name, String email, String password, String inviteToken) async {
+  Future<bool> register(
+    String name,
+    String email,
+    String password,
+    String inviteToken, {
+    String? projectName,
+    String? projectDescription,
+    String? projectColor,
+  }) async {
     isLoading = true;
     statusMessage = null;
     notifyListeners();
 
-    final user = await authRepository.register(name, email, password, inviteToken);
+    final user = await authRepository.register(
+      name,
+      email,
+      password,
+      inviteToken,
+      projectName: projectName,
+      projectDescription: projectDescription,
+      projectColor: projectColor,
+    );
     if (user == null) {
       isLoading = false;
       statusMessage = 'Impossible de créer le compte (e-mail déjà utilisé ou invalide).';
@@ -94,7 +110,7 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
 
   Future<bool> updateMemberRole(String targetUserId, UserRole newRole) async {
     if (currentUser == null) return false;
-    if (currentUser!.role != UserRole.owner && currentUser!.role != UserRole.admin) return false;
+    if (currentUser!.role != UserRole.owner) return false;
     users = users
         .map((u) => u.id == targetUserId ? u.copyWith(role: newRole) : u)
         .toList();
@@ -113,7 +129,7 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
 
   Future<bool> removeMember(String targetUserId) async {
     if (currentUser == null || targetUserId == currentUser!.id) return false;
-    if (currentUser!.role != UserRole.owner && currentUser!.role != UserRole.admin) return false;
+    if (currentUser!.role != UserRole.owner) return false;
     users = users.where((u) => u.id != targetUserId).toList();
     notifyListeners();
 

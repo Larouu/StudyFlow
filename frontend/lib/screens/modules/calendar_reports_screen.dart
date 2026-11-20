@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
+import 'package:flutter/services.dart';
 import '../../widgets/ai_insights_panel.dart';
 
 class CalendarReportsScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class CalendarReportsScreen extends StatefulWidget {
 class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
   late DateTime _focusedMonth;
   DateTime? _selectedDay;
+  String _reportPeriod = 'ALL';
 
   @override
   void initState() {
@@ -25,6 +27,50 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  Future<void> _exportStatsCsv(BuildContext context, StudyFlowStore store) async {
+    final tasks = store.currentTasks;
+    final columns = store.currentColumns;
+    final doneIds = columns.where((column) => column.isDone).map((column) => column.id).toSet();
+    final now = DateTime.now();
+    var selectedTasks = tasks;
+    if (_reportPeriod != 'ALL') {
+      final days = int.tryParse(_reportPeriod) ?? 30;
+      selectedTasks = tasks.where((task) {
+        if (task.dueDate == null) return false;
+        final age = now.difference(task.dueDate!).inHours;
+        return age <= days * 24;
+      }).toList();
+    }
+    final rows = <List<String>>[
+      ['Projet', store.activeProject.name],
+      ['Période', _reportPeriod == 'ALL' ? 'Projet complet' : '$_reportPeriod derniers jours'],
+      ['Avancement', '${selectedTasks.isEmpty ? 0 : selectedTasks.where((task) => doneIds.contains(task.columnId)).length * 100 ~/ selectedTasks.length}%'],
+      ['Tâches totales', '${selectedTasks.length}'],
+      ['Tâches terminées', '${selectedTasks.where((task) => doneIds.contains(task.columnId)).length}'],
+      ['Tâches en retard', '${selectedTasks.where((task) => task.dueDate != null && task.dueDate!.isBefore(now) && !doneIds.contains(task.columnId)).length}'],
+      [],
+      ['Titre', 'Colonne', 'Priorité', 'Échéance', 'Assignés'],
+      for (final task in selectedTasks)
+        [
+          task.title,
+          columns.any((column) => column.id == task.columnId)
+              ? columns.firstWhere((column) => column.id == task.columnId).name
+              : 'Sans colonne',
+          task.priority.name,
+          task.dueDate?.toIso8601String() ?? '',
+          task.assigneeIds.join(' | '),
+        ],
+    ];
+    final csv = rows
+        .map((row) => row.map((value) => '"${value.replaceAll('"', '""')}"').join(','))
+        .join('\n');
+    await Clipboard.setData(ClipboardData(text: csv));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Rapport CSV copié dans le presse-papiers.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
@@ -34,7 +80,6 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
     final columns = store.currentColumns;
     final doneCols = columns.where((c) => c.isDone).toList();
     final doneColIds = doneCols.map((c) => c.id).toSet();
-    final doneColName = doneCols.isNotEmpty ? doneCols.first.name : 'Terminé';
     final completed = tasks.where((t) => doneColIds.contains(t.columnId)).length;
     final overdue = tasks
         .where((t) => t.dueDate != null && t.dueDate!.isBefore(DateTime.now()) && !doneColIds.contains(t.columnId))
@@ -162,40 +207,45 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
                 ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
                       children: [
-                        Expanded(
-                          child: _KpiCard(
-                            label: 'Avancement global',
-                            value: '$rate%',
-                            color: const Color(0xFF4F46E5),
-                          ),
+                        _KpiCard(label: 'Avancement global', value: '$rate%', color: const Color(0xFF4F46E5)),
+                        _KpiCard(label: 'Tâches terminées', value: '$completed / ${tasks.length}', color: const Color(0xFF10B981)),
+                        _KpiCard(label: 'En retard', value: '$overdue', color: Colors.redAccent),
+                        _KpiCard(
+                          label: 'Échéances ≤ 7 jours',
+                          value: '${tasks.where((t) {
+                            if (t.dueDate == null || doneColIds.contains(t.columnId)) return false;
+                            final days = t.dueDate!.difference(DateTime.now()).inHours / 24;
+                            return days >= 0 && days <= 7;
+                          }).length}',
+                          color: const Color(0xFFF59E0B),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _KpiCard(
-                            label: 'Colonne « $doneColName »',
-                            value: '$completed / ${tasks.length}',
-                            color: const Color(0xFF10B981),
-                          ),
+                        _KpiCard(
+                          label: 'Sous-tâches',
+                          value: '${store.subtasks.where((s) => s.done).length}/${store.subtasks.length}',
+                          color: const Color(0xFFA855F7),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _KpiCard(
-                            label: 'En retard',
-                            value: '$overdue',
-                            color: Colors.redAccent,
-                          ),
+                        _KpiCard(
+                          label: 'Jalons actifs',
+                          value: '${store.currentMilestones.where((m) => m.date.isAfter(DateTime.now())).length}',
+                          color: const Color(0xFF0EA5E9),
                         ),
                       ],
                     ),
                     const SizedBox(height: 18),
                     const Text('Répartition par colonne', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 10),
-                    ...columns.map((col) {
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          children: columns.map((col) {
                       final count = tasks.where((t) => t.columnId == col.id).length;
                       final ratio = tasks.isNotEmpty ? count / tasks.length : 0.0;
-                      return Padding(
+                            return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,12 +262,87 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
                           ],
                         ),
                       );
-                    }),
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text('Priorités & charge', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    const SizedBox(height: 10),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          children: [
+                            for (final priority in [TaskPriority.urgente, TaskPriority.haute, TaskPriority.normale, TaskPriority.basse])
+                              Builder(builder: (_) {
+                                final count = tasks.where((task) => task.priority == priority).length;
+                                final ratio = tasks.isEmpty ? 0.0 : count / tasks.length;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(priority.name[0].toUpperCase() + priority.name.substring(1)),
+                                          Text('$count tâches', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      LinearProgressIndicator(
+                                        value: ratio,
+                                        minHeight: 8,
+                                        borderRadius: BorderRadius.circular(6),
+                                        color: priority == TaskPriority.urgente
+                                            ? Colors.redAccent
+                                            : priority == TaskPriority.haute
+                                                ? Colors.orange
+                                                : priority == TaskPriority.normale
+                                                    ? const Color(0xFF4F46E5)
+                                                    : Colors.teal,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: () => store.generateReport(),
-                      icon: const Icon(Icons.summarize_outlined),
-                      label: const Text('Générer un rapport d\'étape'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _reportPeriod,
+                            decoration: const InputDecoration(
+                              labelText: 'Période du rapport',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 'ALL', child: Text('Projet complet')),
+                              DropdownMenuItem(value: '7', child: Text('7 derniers jours')),
+                              DropdownMenuItem(value: '30', child: Text('30 derniers jours')),
+                            ],
+                            onChanged: (value) => setState(() => _reportPeriod = value ?? 'ALL'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton.icon(
+                          onPressed: () => store.generateReport(),
+                          icon: const Icon(Icons.summarize_outlined),
+                          label: const Text('Générer'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => _exportStatsCsv(context, store),
+                          icon: const Icon(Icons.download_outlined),
+                          label: const Text('CSV'),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 14),
                     ...store.reports.map(

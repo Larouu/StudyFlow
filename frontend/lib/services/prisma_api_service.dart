@@ -40,6 +40,9 @@ class PrismaApiService {
     required String password,
     String? name,
     String? inviteToken,
+    String? projectName,
+    String? projectDescription,
+    String? projectColor,
   }) =>
       auth.postAuth(
         mode: mode,
@@ -47,6 +50,9 @@ class PrismaApiService {
         password: password,
         name: name,
         inviteToken: inviteToken,
+        projectName: projectName,
+        projectDescription: projectDescription,
+        projectColor: projectColor,
       );
 
   Future<Map<String, dynamic>?> fetchBootstrap(String userId) => sync.fetchBootstrap(userId);

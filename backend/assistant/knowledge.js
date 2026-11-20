@@ -2,10 +2,10 @@
 module.exports = `
 StudyFlow est une application de gestion de projet collaborative pour équipes d'étudiants : Kanban, tâches, agenda, chat, fichiers, formations et coaching.
 
-RÔLES (par équipe) : OWNER (propriétaire), ADMIN, MEMBER, COACH, VIEWER (observateur).
-- OWNER/ADMIN : invitent des membres (par e-mail d'un utilisateur déjà inscrit) et changent les rôles.
+RÔLES (par équipe) : OWNER (propriétaire), MEMBER, COACH.
+- OWNER : invite des membres (par e-mail d'un utilisateur déjà inscrit) et change les rôles.
 - MEMBER : crée, modifie, déplace et supprime des tâches, discute, partage des fichiers.
-- COACH et VIEWER : consultation seule sur le Kanban et les tâches (ils ne peuvent ni créer, ni déplacer, ni modifier de cartes).
+- COACH : accès consacré aux formations qu'il dirige, aux inscriptions et aux outils de suivi ; pas d’édition du Kanban.
 - Seul le coach voit ses notes privées de séance ; elles ne sont jamais visibles par le coaché.
 
 KANBAN / TÂCHES
@@ -22,7 +22,7 @@ AGENDA / RAPPORTS
 - Des e-mails de rappel sont envoyés environ 24 h avant une échéance et en cas de retard.
 
 CHAT & FICHIERS
-- Chaque projet a un canal de discussion. Les messages peuvent être modifiés ou supprimés (modération par OWNER/ADMIN/COACH).
+- Chaque projet a un canal de discussion. Les messages peuvent être modifiés ou supprimés (modération par OWNER/COACH).
 - Les fichiers sont versionnés par projet.
 
 FORMATIONS & COACHING

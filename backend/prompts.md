@@ -31,3 +31,12 @@ Give me a short plan for finishing my project
 App: http://127.0.0.1:8080
 Backend: http://localhost:3000
 Database: http://localhost:5555
+
+STUDY-S5-2026
+
+Role	Name	Email	Password
+OWNER	Léa Martin	lea.martin@univ-etudiant.fr	Owner2026!
+OWNER	Karim Belkacem	karim.belkacem@univ-etudiant.fr	Owner2026!
+MEMBER	Sami Youssef	sami.youssef@univ-etudiant.fr	Member2026!
+MEMBER	Chloé Dubois	chloe.dubois@univ-etudiant.fr	Member2026!
+COACH	Mme Dupont	helene.dupont@univ-prof.fr	Coach2026!

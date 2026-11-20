@@ -315,8 +315,7 @@ mixin KanbanProviderMixin on StudyFlowStoreBase {
 
   Future<bool> deleteProject(String projectId) async {
     if (currentUser == null ||
-        (currentUser!.role != UserRole.owner &&
-            currentUser!.role != UserRole.admin)) {
+        currentUser!.role != UserRole.owner) {
       return false;
     }
     if (projects.length <= 1) return false;

@@ -55,7 +55,6 @@ class _ChatScreenState extends State<ChatScreen> {
                     final m = messages[idx];
                     final isMe = m.authorId == user.id;
                     final canModerate = user.role == UserRole.owner ||
-                        user.role == UserRole.admin ||
                         user.role == UserRole.coach;
                     final author = widget.store.users.firstWhere(
                       (u) => u.id == m.authorId,

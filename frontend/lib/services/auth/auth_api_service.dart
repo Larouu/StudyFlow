@@ -13,6 +13,9 @@ class AuthApiService {
     required String password,
     String? name,
     String? inviteToken,
+    String? projectName,
+    String? projectDescription,
+    String? projectColor,
   }) async {
     final res = await _client.postJson('/api/mobile/auth', {
       'mode': mode,
@@ -20,6 +23,9 @@ class AuthApiService {
       'password': password,
       if (name != null) 'name': name,
       if (inviteToken != null) 'inviteToken': inviteToken,
+      if (projectName != null) 'projectName': projectName,
+      if (projectDescription != null) 'projectDescription': projectDescription,
+      if (projectColor != null) 'projectColor': projectColor,
     });
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 200 && data['ok'] == true) {

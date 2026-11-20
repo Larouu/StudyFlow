@@ -11,7 +11,7 @@ class TeamsOverviewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final activeUser = store.currentUser!;
-    final canInvite = activeUser.role == UserRole.owner || activeUser.role == UserRole.admin;
+    final canInvite = activeUser.role == UserRole.owner;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -81,7 +81,7 @@ class TeamsOverviewScreen extends StatelessWidget {
             ),
           ),
         ],
-        if (activeUser.role == UserRole.owner || activeUser.role == UserRole.admin) ...[
+        if (activeUser.role == UserRole.owner) ...[
           const SizedBox(height: 12),
           Card(
             child: Padding(
@@ -226,10 +226,8 @@ class TeamsOverviewScreen extends StatelessWidget {
                       itemBuilder: (_) => [
                         if (activeUser.role == UserRole.owner)
                           const PopupMenuItem(value: UserRole.owner, child: Text('OWNER')),
-                        const PopupMenuItem(value: UserRole.admin, child: Text('ADMIN')),
                         const PopupMenuItem(value: UserRole.member, child: Text('MEMBER')),
                         const PopupMenuItem(value: UserRole.coach, child: Text('COACH')),
-                        const PopupMenuItem(value: UserRole.viewer, child: Text('VIEWER')),
                       ],
                       child: Chip(
                         label: Row(
@@ -455,9 +453,7 @@ class TeamsOverviewScreen extends StatelessWidget {
                 decoration: const InputDecoration(labelText: 'Rôle'),
                 items: const [
                   DropdownMenuItem(value: 'MEMBER', child: Text('Membre')),
-                  DropdownMenuItem(value: 'ADMIN', child: Text('Administrateur')),
                   DropdownMenuItem(value: 'COACH', child: Text('Coach')),
-                  DropdownMenuItem(value: 'VIEWER', child: Text('Observateur')),
                 ],
                 onChanged: (v) => setStateDialog(() => role = v ?? 'MEMBER'),
               ),

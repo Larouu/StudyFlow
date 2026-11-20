@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
 import '../../widgets/ai_insights_panel.dart';
@@ -7,11 +9,30 @@ class TrainingCoachingScreen extends StatelessWidget {
   const TrainingCoachingScreen({super.key, required this.store});
   final StudyFlowStore store;
 
+  Future<void> _openMeeting(String url, BuildContext context) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible d’ouvrir la visioconférence.')),
+      );
+    }
+  }
+
+  Future<void> _copyMeeting(String url, BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Lien de visioconférence copié.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = store.currentUser!;
-    final isCoachOrAdmin =
-        user.role == UserRole.coach || user.role == UserRole.admin || user.role == UserRole.owner;
+    final canManageTraining =
+        user.role == UserRole.coach || user.role == UserRole.owner;
 
     return DefaultTabController(
       length: 3,
@@ -39,7 +60,7 @@ class TrainingCoachingScreen extends StatelessWidget {
                 // 1. Catalogue de Formations
                 Column(
                   children: [
-                    if (isCoachOrAdmin)
+                    if (canManageTraining)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                         child: Align(
@@ -91,7 +112,7 @@ class TrainingCoachingScreen extends StatelessWidget {
                                           color: isFull ? Colors.redAccent : Colors.teal,
                                         ),
                                       ),
-                                      if (isCoachOrAdmin) ...[
+                                      if (canManageTraining) ...[
                                         IconButton(
                                           tooltip: 'Modifier',
                                           icon: const Icon(Icons.edit_outlined, size: 18),
@@ -110,6 +131,35 @@ class TrainingCoachingScreen extends StatelessWidget {
                                   const SizedBox(height: 4),
                                   Text(tr.description, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                   const SizedBox(height: 12),
+                                  if (tr.mode == 'ONLINE') ...[
+                                    if (tr.meetingUrl != null)
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          FilledButton.icon(
+                                            onPressed: () => _openMeeting(tr.meetingUrl!, context),
+                                            icon: const Icon(Icons.video_camera_front_outlined, size: 17),
+                                            label: const Text('Rejoindre la formation'),
+                                          ),
+                                          OutlinedButton.icon(
+                                            onPressed: () => _copyMeeting(tr.meetingUrl!, context),
+                                            icon: const Icon(Icons.copy, size: 16),
+                                            label: const Text('Copier le lien'),
+                                          ),
+                                        ],
+                                      )
+                                    else
+                                      OutlinedButton.icon(
+                                        onPressed: () => _openMeeting(
+                                          'https://meet.jit.si/studyflow-training-${tr.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').padRight(12, 'x').substring(0, 12)}',
+                                          context,
+                                        ),
+                                        icon: const Icon(Icons.video_camera_front_outlined, size: 17),
+                                        label: const Text('Créer / rejoindre la visio'),
+                                      ),
+                                    const SizedBox(height: 10),
+                                  ],
                                   if (isEnrolled)
                                     OutlinedButton.icon(
                                       onPressed: () => store.unenrollTraining(tr.id),
@@ -182,8 +232,7 @@ class TrainingCoachingScreen extends StatelessWidget {
                                       Text('Étudiant : ${coachee.name}', style: const TextStyle(fontSize: 11)),
                                       if (isCoachAuthor ||
                                           user.id == cs.coacheeId ||
-                                          user.role == UserRole.owner ||
-                                          user.role == UserRole.admin)
+                                          user.role == UserRole.owner)
                                         IconButton(
                                           tooltip: 'Supprimer la séance',
                                           icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
@@ -193,6 +242,27 @@ class TrainingCoachingScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(cs.topic, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                  if (cs.mode == 'ONLINE' &&
+                                      cs.status == 'CONFIRMED' &&
+                                      cs.meetingUrl != null) ...[
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        FilledButton.icon(
+                                          onPressed: () => _openMeeting(cs.meetingUrl!, context),
+                                          icon: const Icon(Icons.video_camera_front_outlined, size: 17),
+                                          label: const Text('Rejoindre la séance'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: () => _copyMeeting(cs.meetingUrl!, context),
+                                          icon: const Icon(Icons.copy, size: 16),
+                                          label: const Text('Copier le lien'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                   if (cs.sharedReport != null && cs.sharedReport!.isNotEmpty) ...[
                                     const SizedBox(height: 10),
                                     Container(

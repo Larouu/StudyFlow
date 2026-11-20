@@ -99,6 +99,14 @@ class StudyFlowShell extends StatefulWidget {
 class _StudyFlowShellState extends State<StudyFlowShell> {
   int _selectedIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.store.currentUser?.role == UserRole.coach) {
+      _selectedIndex = 5;
+    }
+  }
+
   static const _destinations = <(String label, IconData icon)>[
     ('Kanban', Icons.view_kanban_rounded),
     ('Tâches', Icons.check_circle_outline_rounded),
@@ -109,23 +117,32 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
     ('Équipe', Icons.groups_rounded),
   ];
 
+  List<(String label, IconData icon)> get _visibleDestinations {
+    if (widget.store.currentUser?.role == UserRole.coach) {
+      return const [('Formations', Icons.school_outlined)];
+    }
+    return _destinations;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.sizeOf(context).width >= 850;
     final user = widget.store.currentUser!;
+    final isCoach = user.role == UserRole.coach;
 
-    final bodyContent = _buildCurrentModule();
+    final bodyContent =
+        isCoach ? TrainingCoachingScreen(store: widget.store) : _buildCurrentModule();
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: isWide ? 16 : 8,
+        titleSpacing: isCoach ? 16 : (isWide ? 16 : 8),
         title: Row(
           children: [
             const StudyFlowLogo(size: 30),
             const SizedBox(width: 10),
             Flexible(
               child: Text(
-                widget.store.activeProject.name,
+                isCoach ? 'Espace Coach — Formations & Séances' : widget.store.activeProject.name,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
               ),
@@ -145,7 +162,7 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
           ],
         ),
         actions: [
-          if (widget.store.projects.isNotEmpty)
+          if (!isCoach && widget.store.projects.isNotEmpty)
             PopupMenuButton<String>(
               tooltip: 'Projet actif',
               icon: const Icon(Icons.folder_special_outlined),
@@ -221,7 +238,9 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
           ),
         ],
       ),
-      body: isWide
+      body: isCoach
+          ? bodyContent
+          : isWide
           ? Row(
               children: [
                 NavigationRail(
@@ -229,7 +248,7 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
                   onDestinationSelected: (i) => setState(() => _selectedIndex = i),
                   extended: MediaQuery.sizeOf(context).width >= 1150,
                   destinations: [
-                    for (final d in _destinations)
+                    for (final d in _visibleDestinations)
                       NavigationRailDestination(icon: Icon(d.$2), label: Text(d.$1)),
                   ],
                 ),
@@ -239,7 +258,7 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
             )
           : bodyContent,
       floatingActionButton: AssistantFab(store: widget.store),
-      bottomNavigationBar: isWide
+      bottomNavigationBar: isCoach || isWide
           ? null
           : NavigationBar(
               selectedIndex: _selectedIndex > 4 ? 0 : _selectedIndex,
@@ -250,7 +269,7 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
                 const NavigationDestination(icon: Icon(Icons.apps), label: 'Plus'),
               ],
             ),
-      drawer: isWide
+      drawer: isCoach || isWide
           ? null
           : Drawer(
               child: ListView(

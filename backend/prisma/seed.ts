@@ -1,6 +1,9 @@
 import { PrismaClient } from '@prisma/client';
+import { createHash } from 'crypto';
 
 const prisma = new PrismaClient();
+const hashPassword = (password: string) =>
+  createHash('sha256').update(password).digest('hex');
 
 async function main() {
   console.log('🌱 Amorçage de la base de données StudyFlow...');
@@ -42,6 +45,7 @@ async function main() {
       id: 'user-1',
       name: 'Léa Martin',
       email: 'lea.martin@univ-etudiant.fr',
+      passwordHash: hashPassword('Owner2026!'),
       image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
     },
   });
@@ -51,6 +55,7 @@ async function main() {
       id: 'user-2',
       name: 'Karim Belkacem',
       email: 'karim.belkacem@univ-etudiant.fr',
+      passwordHash: hashPassword('Owner2026!'),
       image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
     },
   });
@@ -60,6 +65,7 @@ async function main() {
       id: 'user-3',
       name: 'Sami Youssef',
       email: 'sami.youssef@univ-etudiant.fr',
+      passwordHash: hashPassword('Member2026!'),
       image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
     },
   });
@@ -69,6 +75,7 @@ async function main() {
       id: 'user-4',
       name: 'Chloé Dubois',
       email: 'chloe.dubois@univ-etudiant.fr',
+      passwordHash: hashPassword('Member2026!'),
       image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
     },
   });
@@ -78,6 +85,7 @@ async function main() {
       id: 'user-5',
       name: 'Mme Dupont',
       email: 'helene.dupont@univ-prof.fr',
+      passwordHash: hashPassword('Coach2026!'),
       image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
     },
   });
@@ -98,7 +106,7 @@ async function main() {
   await prisma.teamMember.createMany({
     data: [
       { teamId: team.id, userId: u1.id, role: 'OWNER' },
-      { teamId: team.id, userId: u2.id, role: 'ADMIN' },
+      { teamId: team.id, userId: u2.id, role: 'OWNER' },
       { teamId: team.id, userId: u3.id, role: 'MEMBER' },
       { teamId: team.id, userId: u4.id, role: 'MEMBER' },
       { teamId: team.id, userId: u5.id, role: 'COACH' },

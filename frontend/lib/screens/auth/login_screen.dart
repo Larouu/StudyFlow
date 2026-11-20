@@ -1,8 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../core/models/studyflow_models.dart';
-import '../../services/seed_data.dart';
 import '../../providers/studyflow_provider.dart';
 import '../../widgets/studyflow_logo.dart';
 
@@ -16,13 +14,14 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isRegisterMode = false;
+  bool _createProject = false;
   bool _obscurePass = true;
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController(text: 'password123');
+  final _passCtrl = TextEditingController();
   final _inviteTokenCtrl = TextEditingController();
-  late final TextEditingController _urlCtrl;
-  bool _showServerConfig = false;
+  final _projectNameCtrl = TextEditingController();
+  final _projectDescriptionCtrl = TextEditingController();
 
   String _generateStrongPassword() {
     const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -42,39 +41,29 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    _urlCtrl = TextEditingController(text: widget.store.serverUrl);
-  }
-
-  @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _inviteTokenCtrl.dispose();
-    _urlCtrl.dispose();
+    _projectNameCtrl.dispose();
+    _projectDescriptionCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    widget.store.updateServerUrl(_urlCtrl.text);
     if (_isRegisterMode) {
       await widget.store.register(
         _nameCtrl.text,
         _emailCtrl.text,
         _passCtrl.text,
-        _inviteTokenCtrl.text,
+        _createProject ? '' : _inviteTokenCtrl.text,
+        projectName: _createProject ? _projectNameCtrl.text : null,
+        projectDescription: _createProject ? _projectDescriptionCtrl.text : null,
       );
     } else {
       await widget.store.login(_emailCtrl.text, _passCtrl.text);
     }
-  }
-
-  Future<void> _quickLogin(AppUser demoUser) async {
-    widget.store.updateServerUrl(_urlCtrl.text);
-    _emailCtrl.text = demoUser.email;
-    await widget.store.login(demoUser.email, 'password123');
   }
 
   @override
@@ -112,97 +101,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Connexion rapide par profil
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'ACCÈS RAPIDE',
-                        style: TextStyle(
-                          color: Color(0xFF818CF8),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.7,
-                        ),
-                      ),
-                      Text(
-                        'Profils de l\'équipe',
-                        style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 2.4,
-                    children: StudyFlowSeedData.users.map((u) {
-                      final isCoach = u.isCoach;
-                      return InkWell(
-                        onTap: widget.store.isLoading ? null : () => _quickLogin(u),
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: isCoach
-                                ? const Color(0xFF3B0764).withValues(alpha: 0.5)
-                                : const Color(0xFF0F172A),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: isCoach
-                                  ? const Color(0xFFA855F7).withValues(alpha: 0.5)
-                                  : const Color(0xFF334155),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 15,
-                                backgroundColor: const Color(0xFF4F46E5),
-                                child: Text(
-                                  u.name.substring(0, 1),
-                                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      u.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      roleToString(u.role),
-                                      style: TextStyle(
-                                        color: isCoach ? const Color(0xFFD8B4FE) : const Color(0xFF94A3B8),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: 18),
-
                   // Formulaire Email / Mot de passe
                   Container(
                     padding: const EdgeInsets.all(18),
@@ -236,13 +134,54 @@ class _LoginScreenState extends State<LoginScreen> {
                             decoration: _inputDeco('Nom complet', Icons.person_outline),
                           ),
                           const SizedBox(height: 12),
-                          TextField(
-                            controller: _inviteTokenCtrl,
-                            textCapitalization: TextCapitalization.characters,
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                            decoration: _inputDeco('Code d’invitation de l’équipe', Icons.group_add_outlined),
+                          SegmentedButton<bool>(
+                            segments: const [
+                              ButtonSegment(
+                                value: false,
+                                label: Text('Rejoindre'),
+                                icon: Icon(Icons.group_add_outlined),
+                              ),
+                              ButtonSegment(
+                                value: true,
+                                label: Text('Créer un projet'),
+                                icon: Icon(Icons.add_business_outlined),
+                              ),
+                            ],
+                            selected: {_createProject},
+                            onSelectionChanged: (values) {
+                              setState(() => _createProject = values.first);
+                            },
+                            showSelectedIcon: false,
                           ),
                           const SizedBox(height: 12),
+                          if (_createProject) ...[
+                            TextField(
+                              controller: _projectNameCtrl,
+                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              decoration: _inputDeco('Nom du projet', Icons.folder_outlined),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _projectDescriptionCtrl,
+                              maxLines: 2,
+                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              decoration: _inputDeco('Description du projet', Icons.description_outlined),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Le compte créé sera propriétaire de ce projet.',
+                              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                            ),
+                            const SizedBox(height: 12),
+                          ] else
+                            TextField(
+                              controller: _inviteTokenCtrl,
+                              textCapitalization: TextCapitalization.characters,
+                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              decoration: _inputDeco('Code d’invitation de l’équipe', Icons.group_add_outlined),
+                            ),
+                          if (_createProject || _inviteTokenCtrl.text.isNotEmpty)
+                            const SizedBox(height: 12),
                         ],
                         TextField(
                           controller: _emailCtrl,
@@ -324,24 +263,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 12),
-                  TextButton.icon(
-                    onPressed: () => setState(() => _showServerConfig = !_showServerConfig),
-                    icon: const Icon(Icons.tune, size: 16, color: Color(0xFF64748B)),
-                    label: const Text(
-                      'Paramètres de connexion',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
-                    ),
-                  ),
-                  if (_showServerConfig)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: TextField(
-                        controller: _urlCtrl,
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                        decoration: _inputDeco('Adresse du service', Icons.link),
-                      ),
-                    ),
                 ],
               ),
             ),
