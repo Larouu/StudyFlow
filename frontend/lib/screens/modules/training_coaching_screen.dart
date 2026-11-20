@@ -372,8 +372,26 @@ class TrainingCoachingScreen extends StatelessWidget {
                 ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    const Text('Objectifs de progression', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Objectifs de progression', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        FilledButton.tonalIcon(
+                          onPressed: () => _openCreateGoalDialog(context),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Objectif'),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 10),
+                    if (store.coachingGoals.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Aucun objectif défini. Créez-en un depuis une compétence ci-dessous ou via "+ Objectif".',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
                     ...store.coachingGoals.map((g) {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -427,12 +445,105 @@ class TrainingCoachingScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                     ...store.skillLevels.map((sk) {
                       final owner = store.users.firstWhere((u) => u.id == sk.userId, orElse: () => user);
+                      final canEdit = sk.userId == user.id || user.isCoach || user.role == UserRole.owner;
+                      final hasGoal = store.coachingGoals.any(
+                        (g) => g.skill.toLowerCase() == sk.skill.toLowerCase() && g.userId == sk.userId,
+                      );
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          title: Text('${sk.skill} · ${owner.name}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                          trailing: Text('Niveau ${sk.level}/5',
-                              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: canEdit
+                              ? () => _openAssessSkillDialog(
+                                    context,
+                                    initialSkill: sk.skill,
+                                    initialLevel: sk.level,
+                                    targetUserId: sk.userId,
+                                  )
+                              : null,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${sk.skill} · ${owner.name}',
+                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            sk.selfAssessed ? 'Auto-évalué' : 'Évalué par coach',
+                                            style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      'Niveau ${sk.level}/5',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: sk.level < 3 ? Colors.amber : const Color(0xFF818CF8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  children: [
+                                    if (canEdit)
+                                      ActionChip(
+                                        avatar: const Icon(Icons.edit_outlined, size: 15),
+                                        label: const Text('Modifier niveau', style: TextStyle(fontSize: 11)),
+                                        onPressed: () => _openAssessSkillDialog(
+                                          context,
+                                          initialSkill: sk.skill,
+                                          initialLevel: sk.level,
+                                          targetUserId: sk.userId,
+                                        ),
+                                      ),
+                                    if (!hasGoal)
+                                      ActionChip(
+                                        avatar: const Icon(Icons.flag_outlined, size: 15),
+                                        label: const Text('Créer objectif', style: TextStyle(fontSize: 11)),
+                                        onPressed: () async {
+                                          await store.createGoal(
+                                            title: 'Progresser en ${sk.skill}',
+                                            skill: sk.skill,
+                                          );
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Objectif ajouté pour ${sk.skill}')),
+                                          );
+                                        },
+                                      ),
+                                    if (!user.isCoach)
+                                      ActionChip(
+                                        avatar: const Icon(Icons.psychology_outlined, size: 15),
+                                        label: const Text('Coaching', style: TextStyle(fontSize: 11)),
+                                        onPressed: () => _openRequestCoaching(
+                                          context,
+                                          initialTopic: 'Renforcer : ${sk.skill}',
+                                        ),
+                                      ),
+                                    if (canEdit)
+                                      ActionChip(
+                                        avatar: const Icon(Icons.delete_outline, size: 15, color: Colors.redAccent),
+                                        label: const Text('Supprimer', style: TextStyle(fontSize: 11, color: Colors.redAccent)),
+                                        onPressed: () => store.deleteSkill(sk.id),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     }),
@@ -446,8 +557,8 @@ class TrainingCoachingScreen extends StatelessWidget {
     );
   }
 
-  void _openRequestCoaching(BuildContext context) {
-    final topicCtrl = TextEditingController();
+  void _openRequestCoaching(BuildContext context, {String? initialTopic}) {
+    final topicCtrl = TextEditingController(text: initialTopic ?? '');
     final users = store.users;
     final defaultCoach = users.firstWhere(
       (u) => u.isCoach,
@@ -787,16 +898,22 @@ class TrainingCoachingScreen extends StatelessWidget {
     );
   }
 
-  void _openAssessSkillDialog(BuildContext context) {
+  void _openAssessSkillDialog(
+    BuildContext context, {
+    String? initialSkill,
+    int initialLevel = 3,
+    String? targetUserId,
+  }) {
     final user = store.currentUser!;
-    final skillCtrl = TextEditingController();
-    var selectedLevel = 3;
+    final skillCtrl = TextEditingController(text: initialSkill ?? '');
+    var selectedLevel = initialLevel.clamp(1, 5);
+    final resolvedTargetId = targetUserId ?? user.id;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setStateDialog) => AlertDialog(
-          title: const Text('Évaluer une compétence'),
+          title: Text(initialSkill == null ? 'Évaluer une compétence' : 'Modifier : $initialSkill'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -837,7 +954,7 @@ class TrainingCoachingScreen extends StatelessWidget {
               onPressed: () {
                 if (skillCtrl.text.trim().isEmpty) return;
                 store.assessSkill(
-                  targetUserId: user.id,
+                  targetUserId: resolvedTargetId,
                   skill: skillCtrl.text.trim(),
                   level: selectedLevel,
                   selfAssessed: !user.isCoach,
@@ -848,6 +965,53 @@ class TrainingCoachingScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _openCreateGoalDialog(BuildContext context) {
+    final titleCtrl = TextEditingController();
+    final skillCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nouvel objectif de progression'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Objectif',
+                hintText: 'Ex: Maîtriser les tests Flutter',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: skillCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Compétence associée',
+                hintText: 'Ex: Flutter, DevOps, IA...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () async {
+              if (titleCtrl.text.trim().isEmpty || skillCtrl.text.trim().isEmpty) return;
+              await store.createGoal(
+                title: titleCtrl.text.trim(),
+                skill: skillCtrl.text.trim(),
+              );
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+            },
+            child: const Text('Créer'),
+          ),
+        ],
       ),
     );
   }

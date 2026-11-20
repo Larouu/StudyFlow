@@ -24,34 +24,72 @@ class TeamsOverviewScreen extends StatelessWidget {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 26,
-                  backgroundColor: const Color(0xFF4F46E5),
-                  child: Text(
-                    activeUser.name.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(activeUser.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      Text(activeUser.email, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Rôle : ${roleToString(activeUser.role)} · ${store.isPrismaConnected ? "Connecté au serveur" : "Mode hors ligne"}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: store.isPrismaConnected ? Colors.teal : Colors.amber,
-                        ),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundColor: const Color(0xFF4F46E5),
+                      child: Text(
+                        activeUser.name.substring(0, 1).toUpperCase(),
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                       ),
-                    ],
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(activeUser.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          Text(activeUser.email, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Rôle : ${roleToString(activeUser.role)} · ${store.isPrismaConnected ? "Connecté au serveur" : "Mode hors ligne"}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: store.isPrismaConnected ? Colors.teal : Colors.amber,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: () => _openAiProfileDialog(context),
+                      icon: const Icon(Icons.auto_awesome, size: 16),
+                      label: const Text('IA Profil'),
+                    ),
+                  ],
+                ),
+                if (activeUser.bio.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    activeUser.bio,
+                    style: const TextStyle(fontSize: 13),
                   ),
+                ],
+                Builder(
+                  builder: (context) {
+                    final mySkills = store.skillLevels.where((s) => s.userId == activeUser.id).toList();
+                    if (mySkills.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: mySkills
+                            .map(
+                              (s) => Chip(
+                                visualDensity: VisualDensity.compact,
+                                label: Text('${s.skill} (${s.level}/5)', style: const TextStyle(fontSize: 11)),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -532,6 +570,82 @@ class TeamsOverviewScreen extends StatelessWidget {
                 );
               },
               child: const Text('Ajouter'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openAiProfileDialog(BuildContext context) {
+    final textCtrl = TextEditingController(text: store.currentUser?.bio ?? '');
+    var isGenerating = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Color(0xFF818CF8)),
+              SizedBox(width: 8),
+              Expanded(child: Text('IA Profil & Compétences')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Décrivez votre parcours, vos cours ou collez un extrait de CV. Groq génère votre bio et extrait vos compétences.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: textCtrl,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Présentation libre',
+                  hintText: 'Ex: Étudiant L3 informatique, passionné par Flutter, Node.js, Prisma et le design UI/UX...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isGenerating ? null : () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              onPressed: isGenerating
+                  ? null
+                  : () async {
+                      if (textCtrl.text.trim().isEmpty) return;
+                      setStateDialog(() => isGenerating = true);
+                      final res = await store.extractProfileBioAndSkills(textCtrl.text);
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      if (res == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Impossible d\'extraire le profil pour le moment.')),
+                        );
+                        return;
+                      }
+                      final count = (res['skills'] as List?)?.length ?? 0;
+                      final source = res['source'] == 'groq-llm' ? 'Groq IA' : 'analyse locale';
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Profil mis à jour ($source) · $count compétence(s) extraite(s)')),
+                      );
+                    },
+              icon: isGenerating
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome, size: 16),
+              label: Text(isGenerating ? 'Analyse...' : 'Extraire avec IA'),
             ),
           ],
         ),

@@ -137,6 +137,108 @@ async function generate({ prisma, type, userId, role, payload = {} }) {
   const prompt = String(payload.prompt || '').trim();
   const now = new Date();
 
+  if (type === 'AI_EXTRACT_PROFILE_SKILLS') {
+    const bioText = String(payload.bioText || prompt || '').trim();
+    if (!bioText) {
+      throw Object.assign(new Error('Un texte de présentation ou parcours est requis.'), { status: 400 });
+    }
+
+    const llm = await callGroqJson(
+      'Tu es l’assistant RH/Pédagogique de StudyFlow. À partir d’une présentation libre d’un étudiant ou coach, rédige une bio professionnelle concise (1 à 2 phrases, max 220 caractères) et extrais 3 à 6 compétences techniques ou transversales avec un niveau estimé de 1 (débutant) à 5 (expert). Réponds UNIQUEMENT en JSON valide : { "bio": string, "skills": [ { "skill": string, "level": number } ] }. Langue: français.',
+      `Texte fourni par l’utilisateur :\n${bioText}`,
+    );
+
+    const fallback = (() => {
+      const catalog = [
+        ['Flutter', /flutter/i],
+        ['Dart', /\bdart\b/i],
+        ['Node.js', /node(\.js)?|express/i],
+        ['Prisma / SQL', /prisma|sql|sqlite|postgres/i],
+        ['React / Web', /react|next\.js|html|css|typescript|javascript/i],
+        ['Python', /python|django|fastapi/i],
+        ['Docker / DevOps', /docker|ci\/cd|git|github/i],
+        ['UI/UX Design', /figma|ui|ux|design/i],
+        ['Gestion de projet', /kanban|agile|scrum|gestion|coordination/i],
+      ];
+      const detected = [];
+      for (const [name, rx] of catalog) {
+        if (rx.test(bioText)) {
+          const isStrong = /expert|avanc|ma[îi]tris|ans|senior|lead/i.test(bioText);
+          detected.push({ skill: name, level: isStrong ? 4 : 3 });
+        }
+      }
+      if (!detected.length) {
+        detected.push({ skill: 'Gestion de projet', level: 3 }, { skill: 'Travail en équipe', level: 3 });
+      }
+      return {
+        bio: bioText.replace(/\s+/g, ' ').slice(0, 220),
+        skills: detected.slice(0, 6),
+      };
+    })();
+
+    const cleanBio = String(llm?.bio || fallback.bio).trim().slice(0, 240);
+    const rawSkills = Array.isArray(llm?.skills) && llm.skills.length ? llm.skills : fallback.skills;
+    const seen = new Set();
+    const normalizedSkills = [];
+    for (const item of rawSkills.slice(0, 8)) {
+      const skillName = String(item?.skill || '').trim().slice(0, 40);
+      if (!skillName) continue;
+      const key = skillName.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const lvl = Math.max(1, Math.min(5, Math.round(Number(item?.level) || 3)));
+      normalizedSkills.push({ skill: skillName, level: lvl });
+    }
+    const source = llm && (llm.bio || Array.isArray(llm.skills)) ? 'groq-llm' : 'local-heuristic';
+
+    const apply = payload.apply !== false;
+    const savedSkills = [];
+    if (apply) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { bio: cleanBio },
+      });
+
+      let resolvedTeamId = payload.teamId || null;
+      if (!resolvedTeamId) {
+        const membership = await prisma.teamMember.findFirst({ where: { userId } });
+        resolvedTeamId = membership?.teamId || 'team-1';
+      }
+
+      for (const s of normalizedSkills) {
+        const existing = await prisma.skillLevel.findFirst({
+          where: { userId, skill: s.skill },
+        });
+        if (existing) {
+          const updated = await prisma.skillLevel.update({
+            where: { id: existing.id },
+            data: { level: s.level, selfAssessed: true, updatedAt: new Date() },
+          });
+          savedSkills.push(updated);
+        } else {
+          const created = await prisma.skillLevel.create({
+            data: {
+              teamId: resolvedTeamId,
+              userId,
+              skill: s.skill,
+              level: s.level,
+              selfAssessed: true,
+            },
+          });
+          savedSkills.push(created);
+        }
+      }
+    }
+
+    return {
+      source,
+      bio: cleanBio,
+      skills: normalizedSkills,
+      applied: apply,
+      savedCount: savedSkills.length,
+    };
+  }
+
   if (type === 'AI_GENERATE_KANBAN') {
     if (!prompt) throw Object.assign(new Error('Un objectif ou sujet est requis.'), { status: 400 });
     const createNewProject = Boolean(payload.createNewProject);

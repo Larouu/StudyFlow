@@ -18,6 +18,7 @@ model User {
   email         String       @unique
   passwordHash  String?
   image         String?
+  bio           String?
   createdAt     DateTime     @default(now())
 
   // Relations

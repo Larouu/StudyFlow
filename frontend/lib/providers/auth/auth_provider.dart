@@ -1,9 +1,45 @@
+import 'dart:convert';
 import '../../core/models/studyflow_models.dart';
+import '../../services/auth/session_storage.dart';
 import '../studyflow_provider_base.dart';
 
 /// Provider du domaine Authentification & Équipe.
 mixin AuthProviderMixin on StudyFlowStoreBase {
+  static const String _sessionStorageKey = 'studyflow_session_user';
+
   String get serverUrl => authRepository.serverUrl;
+
+  void _persistSession() {
+    if (currentUser == null) return;
+    SessionStorage.write(_sessionStorageKey, jsonEncode(currentUser!.toJson()));
+  }
+
+  Future<void> restoreSession() async {
+    final raw = SessionStorage.read(_sessionStorageKey);
+    if (raw == null || raw.isEmpty) return;
+
+    isRestoringSession = true;
+    notifyListeners();
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        final restored = AppUser.fromJson(decoded);
+        if (restored.id.isNotEmpty) {
+          currentUser = restored;
+          if (!users.any((u) => u.id == restored.id)) {
+            users = [...users, restored];
+          }
+          await hydrateFromPrisma();
+          _persistSession();
+        }
+      }
+    } catch (_) {
+      SessionStorage.remove(_sessionStorageKey);
+    } finally {
+      isRestoringSession = false;
+      notifyListeners();
+    }
+  }
 
   void updateServerUrl(String url) {
     authRepository.updateServerUrl(url);
@@ -28,6 +64,7 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
       users = [...users, user];
     }
     await hydrateFromPrisma();
+    _persistSession();
     isLoading = false;
     notifyListeners();
     return true;
@@ -79,6 +116,7 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
     coachingGoals = [];
     skillLevels = [];
     await hydrateFromPrisma();
+    _persistSession();
     isLoading = false;
     notifyListeners();
     return true;
@@ -87,6 +125,7 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
   void logout() {
     currentUser = null;
     isPrismaConnected = false;
+    SessionStorage.remove(_sessionStorageKey);
     notifyListeners();
   }
 
@@ -138,6 +177,21 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
       await hydrateFromPrisma();
     }
     return ok;
+  }
+
+  Future<Map<String, dynamic>?> extractProfileBioAndSkills(String bioText) async {
+    if (currentUser == null || bioText.trim().isEmpty) return null;
+    final res = await generateWithAi(
+      'AI_EXTRACT_PROFILE_SKILLS',
+      payload: {
+        'bioText': bioText.trim(),
+        'apply': true,
+      },
+    );
+    if (res != null) {
+      await hydrateFromPrisma();
+    }
+    return res;
   }
 }
 

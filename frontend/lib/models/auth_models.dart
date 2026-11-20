@@ -29,6 +29,7 @@ class AppUser {
     required this.email,
     required this.avatar,
     required this.role,
+    this.bio = '',
   });
 
   final String id;
@@ -36,17 +37,19 @@ class AppUser {
   final String email;
   final String avatar;
   final UserRole role;
+  final String bio;
 
   bool get isCoachOrViewer => role == UserRole.coach;
   bool get isCoach => role == UserRole.coach;
   bool get canEditTasks => !isCoachOrViewer;
 
-  AppUser copyWith({UserRole? role}) => AppUser(
+  AppUser copyWith({UserRole? role, String? bio}) => AppUser(
         id: id,
         name: name,
         email: email,
         avatar: avatar,
         role: role ?? this.role,
+        bio: bio ?? this.bio,
       );
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
@@ -55,6 +58,16 @@ class AppUser {
         email: json['email']?.toString() ?? '',
         avatar: json['avatar']?.toString() ?? json['image']?.toString() ?? '',
         role: parseUserRole(json['role']?.toString()),
+        bio: json['bio']?.toString() ?? '',
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'email': email,
+        'avatar': avatar,
+        'role': roleToString(role),
+        'bio': bio,
+      };
 }
 

@@ -25,6 +25,12 @@ class _StudyFlowAppState extends State<StudyFlowApp> {
   bool _darkMode = true;
 
   @override
+  void initState() {
+    super.initState();
+    _store.restoreSession();
+  }
+
+  @override
   void dispose() {
     _store.dispose();
     super.dispose();
@@ -66,6 +72,11 @@ class _StudyFlowAppState extends State<StudyFlowApp> {
       home: ListenableBuilder(
         listenable: _store,
         builder: (context, _) {
+          if (_store.isRestoringSession) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
           if (_store.currentUser == null) {
             return LoginScreen(store: _store);
           }

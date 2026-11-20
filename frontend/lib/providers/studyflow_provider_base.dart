@@ -34,6 +34,7 @@ abstract class StudyFlowStoreBase extends ChangeNotifier {
 
   AppUser? currentUser;
   bool isLoading = false;
+  bool isRestoringSession = false;
   bool isPrismaConnected = false;
   String? statusMessage;
   String activeProjectId = 'proj-1';

@@ -134,6 +134,7 @@ app.post('/api/mobile/auth', async (req, res) => {
           name: user.name,
           email: user.email,
           avatar: user.image,
+          bio: user.bio || '',
           role,
         },
       });
@@ -164,6 +165,7 @@ app.post('/api/mobile/auth', async (req, res) => {
         name: user.name,
         email: user.email,
         avatar: user.image || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        bio: user.bio || '',
         role: user.teamMembers[0]?.role || 'MEMBER',
       },
     });
@@ -302,6 +304,7 @@ app.get('/api/mobile/bootstrap', async (req, res) => {
         name: u.name,
         email: u.email,
         avatar: u.image || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        bio: u.bio || '',
         role: member ? member.role : 'MEMBER',
         joinedAt: member ? member.joinedAt.toISOString() : u.createdAt.toISOString(),
       };
@@ -1046,6 +1049,36 @@ app.post('/api/mobile/sync', async (req, res) => {
 
       case 'DELETE_GOAL': {
         await prisma.coachingGoal.delete({ where: { id: payload.goalId } }).catch(() => null);
+        return res.json({ ok: true });
+      }
+
+      case 'CREATE_GOAL': {
+        const { title, skill, targetDate } = payload;
+        if (!title || !skill) {
+          return res.status(400).json({ ok: false, error: 'title et skill requis.' });
+        }
+        const resolvedTeamId = (await getUserTeamId(userId)) || 'team-1';
+        const created = await prisma.coachingGoal.create({
+          data: {
+            userId,
+            teamId: resolvedTeamId,
+            title: String(title).trim(),
+            skill: String(skill).trim(),
+            targetDate: targetDate ? new Date(targetDate) : null,
+            progress: 0,
+            status: 'OPEN',
+          },
+        });
+        return res.json({ ok: true, data: created });
+      }
+
+      case 'DELETE_SKILL': {
+        const existing = await prisma.skillLevel.findUnique({ where: { id: payload.skillId } });
+        if (!existing) return res.json({ ok: true });
+        if (existing.userId !== userId && role !== 'OWNER' && role !== 'COACH') {
+          return res.status(403).json({ ok: false, error: 'Permission refusée' });
+        }
+        await prisma.skillLevel.delete({ where: { id: payload.skillId } }).catch(() => null);
         return res.json({ ok: true });
       }
 

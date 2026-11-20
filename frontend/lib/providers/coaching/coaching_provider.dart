@@ -228,6 +228,26 @@ mixin CoachingProviderMixin on StudyFlowStoreBase {
     });
   }
 
+  Future<void> createGoal({required String title, required String skill}) async {
+    if (currentUser == null || title.trim().isEmpty || skill.trim().isEmpty) return;
+    final created = CoachingGoalItem(
+      id: 'goal-${DateTime.now().millisecondsSinceEpoch}',
+      userId: currentUser!.id,
+      title: title.trim(),
+      skill: skill.trim(),
+      progress: 0,
+      status: 'OPEN',
+    );
+    coachingGoals = [created, ...coachingGoals];
+    notifyListeners();
+
+    await coachingRepo.sync('CREATE_GOAL', currentUser!.id, {
+      'title': title.trim(),
+      'skill': skill.trim(),
+    });
+    await hydrateFromPrisma();
+  }
+
   Future<void> deleteGoal(String goalId) async {
     if (currentUser == null) return;
     coachingGoals = coachingGoals.where((g) => g.id != goalId).toList();
@@ -275,6 +295,15 @@ mixin CoachingProviderMixin on StudyFlowStoreBase {
       'level': level,
       'selfAssessed': selfAssessed,
     });
+    await hydrateFromPrisma();
+  }
+
+  Future<void> deleteSkill(String skillId) async {
+    if (currentUser == null) return;
+    skillLevels = skillLevels.where((s) => s.id != skillId).toList();
+    notifyListeners();
+
+    await coachingRepo.sync('DELETE_SKILL', currentUser!.id, {'skillId': skillId});
   }
 }
 
