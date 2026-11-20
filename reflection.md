@@ -36,7 +36,7 @@ workspace-level separation.
 
 Iheb implemented the task experience. A task has a title, description, priority,
 deadline, project, column, creator, assignees, labels, and subtasks. Tasks can be
-created, edited, moved, assigned, and deleted. Subtasks provide a smaller breakdown
+created, edited, assigned, and deleted. Subtasks provide a smaller breakdown
 of each task and contribute to completion indicators. Assignment changes and overdue
 tasks are also connected to the notification system.
 
