@@ -332,7 +332,17 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
                         ),
                         const SizedBox(width: 10),
                         FilledButton.icon(
-                          onPressed: () => store.generateReport(),
+                          onPressed: () async {
+                            final ok = await store.generateReport(period: _reportPeriod);
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(ok
+                                    ? 'Rapport généré et enregistré.'
+                                    : 'Impossible de générer le rapport.'),
+                              ),
+                            );
+                          },
                           icon: const Icon(Icons.summarize_outlined),
                           label: const Text('Générer'),
                         ),

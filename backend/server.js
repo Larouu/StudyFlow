@@ -729,23 +729,41 @@ app.post('/api/mobile/sync', async (req, res) => {
 
       // --- GÉNÉRER UN RAPPORT (M4) ---
       case 'GENERATE_REPORT': {
-        const { projectId } = payload;
+        const { projectId, period = 'ALL' } = payload;
         const tasks = await prisma.task.findMany({ where: { projectId } });
         const doneCol = await prisma.column.findFirst({ where: { projectId, isDone: true } });
-        const completedCount = tasks.filter((t) => t.columnId === (doneCol ? doneCol.id : '')).length;
+        let selectedTasks = tasks;
+        if (period !== 'ALL') {
+          const days = Number(period) || 30;
+          const cutoff = new Date(Date.now() - days * 86400000);
+          selectedTasks = tasks.filter((task) => task.dueDate && new Date(task.dueDate) >= cutoff);
+        }
+        const doneColumnIds = (await prisma.column.findMany({ where: { projectId, isDone: true }, select: { id: true } }))
+          .map((column) => column.id);
+        const completedCount = selectedTasks.filter((task) => doneColumnIds.includes(task.columnId)).length;
+        const overdueCount = selectedTasks.filter((task) =>
+          task.dueDate &&
+          new Date(task.dueDate) < new Date() &&
+          !doneColumnIds.includes(task.columnId)
+        ).length;
         const rate = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
+        const periodDays = period === 'ALL' ? null : Number(period) || 30;
+        const periodStart = periodDays ? new Date(Date.now() - periodDays * 86400000) : new Date(0);
+        const project = await prisma.project.findUnique({ where: { id: projectId } });
 
         const report = await prisma.report.create({
           data: {
             projectId,
             createdById: userId,
-            periodStart: new Date(Date.now() - 7 * 86400000),
+            periodStart,
             periodEnd: new Date(),
             data: JSON.stringify({
-              title: `Rapport Mobile - ${new Date().toLocaleDateString('fr-FR')}`,
+              title: `Rapport d'étape - ${project ? project.name : 'Projet'} - ${new Date().toLocaleDateString('fr-FR')}`,
               completionRate: rate,
-              totalTasks: tasks.length,
+              totalTasks: selectedTasks.length,
               completedTasks: completedCount,
+              overdueTasks: overdueCount,
+              period,
             }),
           },
         });

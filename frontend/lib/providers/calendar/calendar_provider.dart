@@ -3,30 +3,44 @@ import '../studyflow_provider_base.dart';
 
 /// Provider du domaine Agenda, Jalons & Rapports.
 mixin CalendarProviderMixin on StudyFlowStoreBase {
-  Future<void> generateReport() async {
-    if (currentUser == null) return;
+  Future<bool> generateReport({String period = 'ALL'}) async {
+    if (currentUser == null) return false;
     final doneCols = currentColumns.where((c) => c.isDone).map((c) => c.id).toSet();
-    final total = currentTasks.length;
-    final done = currentTasks.where((t) => doneCols.contains(t.columnId)).length;
+    var selectedTasks = currentTasks;
+    final now = DateTime.now();
+    if (period != 'ALL') {
+      final days = int.tryParse(period) ?? 30;
+      selectedTasks = currentTasks.where((task) {
+        if (task.dueDate == null) return false;
+        return task.dueDate!.isAfter(now.subtract(Duration(days: days)));
+      }).toList();
+    }
+    final total = selectedTasks.length;
+    final done = selectedTasks.where((t) => doneCols.contains(t.columnId)).length;
     final rate = total > 0 ? ((done / total) * 100).round() : 0;
+    final overdue = selectedTasks.where((task) =>
+      task.dueDate != null &&
+      task.dueDate!.isBefore(now) &&
+      !doneCols.contains(task.columnId)
+    ).length;
 
-    reports = [
-      ProjectReportItem(
-        id: 'rep-${DateTime.now().millisecondsSinceEpoch}',
-        title: 'Rapport d\'étape · ${activeProject.name}',
-        completionRate: rate,
-        totalTasks: total,
-        completedTasks: done,
-        createdAt: DateTime.now(),
-      ),
-      ...reports,
-    ];
-    notifyListeners();
-
-    await calendarRepo.sync('GENERATE_REPORT', currentUser!.id, {
+    final success = await calendarRepo.sync('GENERATE_REPORT', currentUser!.id, {
       'projectId': activeProject.id,
+      'period': period,
+      'totalTasks': total,
+      'completedTasks': done,
+      'completionRate': rate,
+      'overdueTasks': overdue,
     });
+    if (!success) {
+      statusMessage = 'Impossible de générer le rapport.';
+      notifyListeners();
+      return false;
+    }
     await hydrateFromPrisma();
+    statusMessage = null;
+    notifyListeners();
+    return true;
   }
 
   Future<void> deleteReport(String reportId) async {
