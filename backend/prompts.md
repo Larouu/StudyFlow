@@ -32,8 +32,8 @@ STUDY-S5-2026
 
 Role	Name	Email	Password
 OWNER	Léa Martin	lea.martin@univ-etudiant.fr	Owner2026!
-OWNER	Karim Belkacem	karim.belkacem@univ-etudiant.fr	Owner2026!
+MEMBER	Karim Belkacem	karim.belkacem@univ-etudiant.fr	Owner2026!
 MEMBER	Sami Youssef	sami.youssef@univ-etudiant.fr	Member2026!
 MEMBER	Chloé Dubois	chloe.dubois@univ-etudiant.fr	Member2026!
 COACH	Mme Dupont	helene.dupont@univ-prof.fr	Coach2026!
-MEMBER  Achref   achraflarousse52@gmail.com   xN5@GxVm!hjkJ6
+OWNER  Achref   achraflarousse52@gmail.com   xN5@GxVm!hjkJ6
