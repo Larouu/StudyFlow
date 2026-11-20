@@ -1285,6 +1285,86 @@ app.get('/api/mobile/files/:id', async (req, res) => {
   }
 });
 
+app.get('/api/mobile/reports/:id', async (req, res) => {
+  try {
+    const report = await prisma.report.findUnique({
+      where: { id: req.params.id },
+      include: { project: true },
+    });
+    if (!report) {
+      return res.status(404).json({ ok: false, error: 'Rapport introuvable.' });
+    }
+
+    let data = {};
+    try {
+      data = JSON.parse(report.data);
+    } catch (_) {}
+    const title = data.title || `Rapport ${report.project?.name || 'StudyFlow'}`;
+    const completionRate = Number(data.completionRate || 0);
+    const totalTasks = Number(data.totalTasks || 0);
+    const completedTasks = Number(data.completedTasks || 0);
+    const overdueTasks = Number(data.overdueTasks || 0);
+    const period = data.period || 'ALL';
+    const periodLabel = period === 'ALL'
+      ? 'Projet complet'
+      : `Derniers ${period} jours`;
+    const createdAt = report.createdAt.toLocaleString('fr-FR');
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="rapport-${report.id}.html"`);
+    return res.send(`<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title.replace(/[&<>]/g, '')}</title>
+  <style>
+    body { margin:0; background:#f1f5f9; color:#0f172a; font-family:Arial,sans-serif; }
+    main { max-width:820px; margin:32px auto; background:white; border-radius:18px; box-shadow:0 12px 40px #0f172a18; overflow:hidden; }
+    header { padding:28px 32px; background:#4f46e5; color:white; }
+    h1 { margin:0 0 8px; font-size:26px; }
+    section { padding:24px 32px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+    .kpi { border:1px solid #e2e8f0; border-radius:14px; padding:16px; background:#f8fafc; }
+    .kpi strong { display:block; margin-top:6px; font-size:24px; color:#4f46e5; }
+    .bar { height:12px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+    .bar div { height:100%; border-radius:999px; background:#10b981; }
+    table { width:100%; border-collapse:collapse; margin-top:16px; }
+    th,td { text-align:left; border-bottom:1px solid #e2e8f0; padding:10px; }
+    @media print { body{background:white} main{box-shadow:none;margin:0} }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>${String(title).replace(/[&<>]/g, '')}</h1>
+      <div>${report.project?.name || 'StudyFlow'} · ${periodLabel} · Généré le ${createdAt}</div>
+    </header>
+    <section>
+      <div class="grid">
+        <div class="kpi">Avancement<strong>${completionRate}%</strong></div>
+        <div class="kpi">Tâches totales<strong>${totalTasks}</strong></div>
+        <div class="kpi">Terminées<strong>${completedTasks}</strong></div>
+        <div class="kpi">En retard<strong>${overdueTasks}</strong></div>
+      </div>
+      <h2>Progression du projet</h2>
+      <div class="bar"><div style="width:${Math.max(0, Math.min(100, completionRate))}%"></div></div>
+      <table>
+        <tbody>
+          <tr><th>Période</th><td>${periodLabel}</td></tr>
+          <tr><th>Projet</th><td>${String(report.project?.name || 'Projet').replace(/[&<>]/g, '')}</td></tr>
+          <tr><th>Rapport</th><td>${report.id}</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>`);
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // -------------------------------------------------------------
 // IA / ML locale déterministe par module
 // -------------------------------------------------------------

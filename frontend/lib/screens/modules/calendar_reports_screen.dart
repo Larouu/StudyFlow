@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/ai_insights_panel.dart';
 
 class CalendarReportsScreen extends StatefulWidget {
@@ -68,6 +69,28 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Rapport CSV copié dans le presse-papiers.')),
+    );
+  }
+
+  String _reportUrl(String reportId) =>
+      '${widget.store.serverUrl}/api/mobile/reports/$reportId';
+
+  Future<void> _openReport(BuildContext context, String reportId) async {
+    final uri = Uri.tryParse(_reportUrl(reportId));
+    if (uri == null) return;
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible d’ouvrir le rapport.')),
+      );
+    }
+  }
+
+  Future<void> _copyReportLink(BuildContext context, String reportId) async {
+    await Clipboard.setData(ClipboardData(text: _reportUrl(reportId)));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Lien du rapport copié.')),
     );
   }
 
@@ -365,10 +388,25 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
                             'Achèvement : ${r.completionRate}% (${r.completedTasks}/${r.totalTasks} tâches)',
                             style: const TextStyle(fontSize: 12),
                           ),
-                          trailing: IconButton(
-                            tooltip: 'Supprimer le rapport',
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                            onPressed: () => store.deleteReport(r.id),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Ouvrir le rapport',
+                                icon: const Icon(Icons.open_in_new, size: 20),
+                                onPressed: () => _openReport(context, r.id),
+                              ),
+                              IconButton(
+                                tooltip: 'Copier le lien',
+                                icon: const Icon(Icons.link, size: 20),
+                                onPressed: () => _copyReportLink(context, r.id),
+                              ),
+                              IconButton(
+                                tooltip: 'Supprimer le rapport',
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                onPressed: () => store.deleteReport(r.id),
+                              ),
+                            ],
                           ),
                         ),
                       ),
