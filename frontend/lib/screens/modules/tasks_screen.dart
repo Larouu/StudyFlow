@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../providers/studyflow_provider.dart';
+import '../../widgets/ai_insights_panel.dart';
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key, required this.store});
@@ -25,6 +26,14 @@ class _TasksScreenState extends State<TasksScreen> {
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: AiInsightsPanel(
+            store: widget.store,
+            module: 'tasks',
+            title: 'Assistant IA des tâches',
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Wrap(

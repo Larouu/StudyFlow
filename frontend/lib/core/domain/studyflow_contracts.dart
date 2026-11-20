@@ -19,12 +19,20 @@ class AiRecommendation {
     required this.explanation,
     required this.confidence,
     required this.isPrediction,
+    required this.source,
+    required this.generatedAt,
+    this.title,
+    this.action,
   });
   final String id;
   final String kind;
   final String explanation;
   final double confidence;
   final bool isPrediction;
+  final String source;
+  final DateTime generatedAt;
+  final String? title;
+  final String? action;
 }
 
 // M1 - Authentication and teams

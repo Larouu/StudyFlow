@@ -56,6 +56,24 @@ abstract class StudyFlowStoreBase extends ChangeNotifier {
   List<CoachingGoalItem> coachingGoals = StudyFlowSeedData.initialGoals();
   List<SkillLevelItem> skillLevels = StudyFlowSeedData.initialSkills();
 
+  Future<List<Map<String, dynamic>>> generateAiInsights(
+    String module, {
+    Map<String, dynamic> payload = const {},
+  }) async {
+    final user = currentUser;
+    if (user == null) return [];
+    final mergedPayload = <String, dynamic>{
+      ...payload,
+      'projectId': activeProject.id,
+      'teamId': activeProject.teamId,
+    };
+    return _api.ai.analyze(
+      module: module,
+      userId: user.id,
+      payload: mergedPayload,
+    );
+  }
+
   ProjectItem get activeProject =>
       projects.firstWhere((p) => p.id == activeProjectId, orElse: () => projects.first);
 

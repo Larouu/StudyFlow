@@ -5,6 +5,7 @@ import 'coaching/coaching_api_service.dart';
 import 'communication/communication_api_service.dart';
 import 'kanban/kanban_api_service.dart';
 import 'sync/sync_api_service.dart';
+import 'ai/ai_api_service.dart';
 
 /// Façade unifiée sur les services HTTP organisés par module.
 class PrismaApiService {
@@ -15,6 +16,7 @@ class PrismaApiService {
     calendar = CalendarApiService(sync);
     communication = CommunicationApiService(sync);
     coaching = CoachingApiService(sync);
+    ai = AiApiService(_client);
   }
 
   final ApiClient _client;
@@ -24,6 +26,7 @@ class PrismaApiService {
   late final CalendarApiService calendar;
   late final CommunicationApiService communication;
   late final CoachingApiService coaching;
+  late final AiApiService ai;
 
   String get baseUrl => _client.baseUrl;
   set baseUrl(String value) => _client.baseUrl = value;

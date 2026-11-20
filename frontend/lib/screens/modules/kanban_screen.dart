@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/domain/kanban_columns.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
+import '../../widgets/ai_insights_panel.dart';
 
 class KanbanScreen extends StatefulWidget {
   const KanbanScreen({super.key, required this.store});
@@ -66,6 +67,15 @@ class _KanbanScreenState extends State<KanbanScreen> {
               ],
             ),
           ),
+
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: AiInsightsPanel(
+            store: widget.store,
+            module: 'kanban',
+            title: 'Assistant IA Kanban',
+          ),
+        ),
 
         // Barre de filtres & actions
         Padding(

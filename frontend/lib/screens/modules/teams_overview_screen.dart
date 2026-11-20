@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
+import '../../widgets/ai_insights_panel.dart';
 
 class TeamsOverviewScreen extends StatelessWidget {
   const TeamsOverviewScreen({super.key, required this.store});
@@ -15,6 +16,11 @@ class TeamsOverviewScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        AiInsightsPanel(
+          store: store,
+          module: 'teams',
+          title: 'Assistant IA équipe',
+        ),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),

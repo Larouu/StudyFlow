@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
+import '../../widgets/ai_insights_panel.dart';
 
 class TrainingCoachingScreen extends StatelessWidget {
   const TrainingCoachingScreen({super.key, required this.store});
@@ -16,6 +17,14 @@ class TrainingCoachingScreen extends StatelessWidget {
       length: 3,
       child: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: AiInsightsPanel(
+              store: store,
+              module: 'coaching',
+              title: 'Assistant IA formation & coaching',
+            ),
+          ),
           TabBar(
             isScrollable: MediaQuery.sizeOf(context).width < 480,
             tabs: [

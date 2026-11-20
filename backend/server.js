@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
+const ai = require('./ai');
 
 const path = require('path');
 const fs = require('fs');
@@ -1127,6 +1128,29 @@ app.get('/api/mobile/files/:id', async (req, res) => {
     return res.sendFile(filePath);
   } catch (error) {
     return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// IA / ML locale déterministe par module
+// -------------------------------------------------------------
+app.get('/api/mobile/ai', (req, res) => {
+  res.json({ ok: true, data: { capabilities: ai.listCapabilities() } });
+});
+
+app.post('/api/mobile/ai', async (req, res) => {
+  try {
+    const { action, module, userId, payload = {} } = req.body || {};
+    const result = await ai.handle({
+      prisma,
+      action: action || module,
+      userId,
+      payload: payload || {},
+    });
+    return res.json({ ok: true, data: result });
+  } catch (error) {
+    const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 500;
+    return res.status(status).json({ ok: false, error: error.message });
   }
 });
 

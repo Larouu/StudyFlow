@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
+import '../../widgets/ai_insights_panel.dart';
 
 class CalendarReportsScreen extends StatefulWidget {
   const CalendarReportsScreen({super.key, required this.store});
@@ -57,6 +58,11 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
                 ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
+                    AiInsightsPanel(
+                      store: store,
+                      module: 'calendar',
+                      title: 'Assistant IA calendrier',
+                    ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [

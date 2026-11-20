@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
+import '../../widgets/ai_insights_panel.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.store});
@@ -36,6 +37,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: AiInsightsPanel(
+            store: widget.store,
+            module: 'chat',
+            title: 'Assistant IA du chat',
+          ),
+        ),
         Expanded(
           child: messages.isEmpty
               ? const Center(child: Text('Aucun message dans ce canal.', style: TextStyle(color: Colors.grey)))
@@ -188,6 +197,14 @@ class FilesScreen extends StatelessWidget {
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: AiInsightsPanel(
+            store: store,
+            module: 'files',
+            title: 'Assistant IA des fichiers',
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
