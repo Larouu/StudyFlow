@@ -74,6 +74,12 @@ const templates = {
     html: layout('Séance confirmée 📅', p(`Bonjour ${esc(name)},`) + p(`${esc(coachName)} a confirmé votre séance « ${esc(topic)} » le <b>${esc(fmtDate(scheduledAt))}</b>.`) + button(meetingUrl, 'Rejoindre la visio')),
     text: `Séance « ${topic} » confirmée le ${fmtDate(scheduledAt)}. ${meetingUrl || ''}`,
   }),
+
+  weeklySummary: ({ name, projectName, period, taskCount, overdueCount, milestoneCount, upcoming }) => ({
+    subject: `Résumé hebdomadaire - ${projectName}`,
+    html: layout('Votre résumé hebdomadaire', p(`Bonjour ${esc(name)},`) + p(`Voici l’activité prévue pour <b>${esc(projectName)}</b> du ${esc(period)}.`) + p(`<b>${taskCount}</b> échéance(s) de tâches · <b>${overdueCount}</b> tâche(s) en retard · <b>${milestoneCount}</b> jalon(s).`) + p(upcoming ? `<b>À venir :</b><br>${esc(upcoming).replace(/\n/g, '<br>')}` : 'Aucun événement majeur prévu cette semaine.')),
+    text: `Résumé hebdomadaire ${projectName} (${period}) : ${taskCount} tâches, ${overdueCount} en retard, ${milestoneCount} jalons.\n${upcoming || ''}`,
+  }),
 };
 
 module.exports = templates;

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
 import 'package:flutter/services.dart';
@@ -17,16 +19,164 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
   late DateTime _focusedMonth;
   DateTime? _selectedDay;
   String _reportPeriod = 'ALL';
+  List<Map<String, dynamic>> _conflictDays = [];
+  int _conflictsCount = 0;
+  int _overloadedCount = 0;
+  bool _calendarLoading = false;
 
   @override
   void initState() {
     super.initState();
+    final store = widget.store;
     final now = DateTime.now();
-    _focusedMonth = DateTime(now.year, now.month, 1);
+    final futureDates = <DateTime>[
+      for (final task in store.currentTasks)
+        if (task.dueDate != null && !task.dueDate!.isBefore(now)) task.dueDate!,
+      for (final milestone in store.currentMilestones)
+        if (!milestone.date.isBefore(now)) milestone.date,
+      for (final training in store.trainings)
+        if (!training.startsAt.isBefore(now)) training.startsAt,
+      for (final session in store.coachingSessions)
+        if (session.scheduledAt != null && !session.scheduledAt!.isBefore(now))
+          session.scheduledAt!,
+    ];
+    final initialDate = futureDates.isEmpty
+        ? now
+        : futureDates.reduce((a, b) => a.isBefore(b) ? a : b);
+    _focusedMonth = DateTime(initialDate.year, initialDate.month, 1);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchCalendarInsights());
   }
 
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Future<void> _fetchCalendarInsights() async {
+    if (_calendarLoading) return;
+    setState(() => _calendarLoading = true);
+    try {
+      final uri = Uri.parse(
+        '${widget.store.serverUrl}/api/mobile/calendar/conflicts?projectId=${widget.store.activeProject.id}',
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = json['data'] as Map<String, dynamic>?;
+        if (data != null) {
+          setState(() {
+            _conflictDays = (data['days'] as List? ?? [])
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList();
+            _conflictsCount = (data['conflictsCount'] as num?)?.toInt() ?? 0;
+            _overloadedCount = (data['overloadedCount'] as num?)?.toInt() ?? 0;
+          });
+        }
+      }
+    } catch (_) {
+      // The agenda remains usable even when the insights endpoint is unavailable.
+    } finally {
+      if (mounted) setState(() => _calendarLoading = false);
+    }
+  }
+
+  Future<void> _exportIcs() async {
+    final uri = Uri.parse(
+      '${widget.store.serverUrl}/api/mobile/calendar/ics?projectId=${widget.store.activeProject.id}',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _sendWeeklySummary() async {
+    final user = widget.store.currentUser;
+    if (user == null) return;
+    try {
+      final response = await http.post(
+        Uri.parse('${widget.store.serverUrl}/api/mobile/calendar/weekly-summary'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'userId': user.id,
+          'projectId': widget.store.activeProject.id,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.statusCode == 200 && json['ok'] == true
+              ? 'Résumé hebdomadaire envoyé.'
+              : (json['error']?.toString() ?? 'Envoi impossible.')),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible de joindre le serveur de mails.')),
+      );
+    }
+  }
+
+  Future<void> _addNaturalEvent(BuildContext context) async {
+    final controller = TextEditingController();
+    final user = widget.store.currentUser;
+    if (user == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Ajouter avec langage naturel'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Exemple : ajouter une revue demain à 14h',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              final text = controller.text.trim();
+              if (text.isEmpty) return;
+              try {
+                final response = await http.post(
+                  Uri.parse('${widget.store.serverUrl}/api/mobile/calendar/natural'),
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode({
+                    'userId': user.id,
+                    'projectId': widget.store.activeProject.id,
+                    'text': text,
+                  }),
+                ).timeout(const Duration(seconds: 20));
+                final json = jsonDecode(response.body) as Map<String, dynamic>;
+                if (!mounted) return;
+                if (response.statusCode == 200 && json['ok'] == true) {
+                  await widget.store.hydrateFromPrisma();
+                  await _fetchCalendarInsights();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Événement ajouté à l’agenda.')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(json['error']?.toString() ?? 'Ajout impossible.')),
+                  );
+                }
+              } catch (_) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Le service IA est temporairement indisponible.')),
+                );
+              }
+            },
+            child: const Text('Ajouter'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _exportStatsCsv(BuildContext context, StudyFlowStore store) async {
     final tasks = store.currentTasks;
@@ -130,6 +280,80 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
                       store: store,
                       module: 'calendar',
                       title: 'Assistant IA calendrier',
+                    ),
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Outils avancés de l’agenda',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _calendarLoading
+                                  ? 'Analyse des charges en cours…'
+                                  : '$_conflictsCount jour(s) avec conflit · $_overloadedCount jour(s) surchargé(s)',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                            if (_conflictDays.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: _conflictDays
+                                    .where((day) => day['conflict'] == true)
+                                    .take(4)
+                                    .map((day) {
+                                      final overloaded = day['overloaded'] == true;
+                                      return Chip(
+                                        label: Text(
+                                          '${day['date']} · ${overloaded ? 'surcharge' : 'conflit'}',
+                                          style: const TextStyle(fontSize: 10),
+                                        ),
+                                        avatar: Icon(
+                                          overloaded ? Icons.warning_amber : Icons.event_busy,
+                                          size: 14,
+                                          color: overloaded ? Colors.redAccent : Colors.orange,
+                                        ),
+                                      );
+                                    })
+                                    .toList(),
+                              ),
+                            ],
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () => _addNaturalEvent(context),
+                                  icon: const Icon(Icons.add_comment_outlined, size: 16),
+                                  label: const Text('Ajouter en langage naturel'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _exportIcs,
+                                  icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                                  label: const Text('Exporter .ics'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _sendWeeklySummary,
+                                  icon: const Icon(Icons.mail_outline, size: 16),
+                                  label: const Text('Résumé hebdomadaire'),
+                                ),
+                                IconButton(
+                                  tooltip: 'Actualiser les conflits',
+                                  onPressed: _fetchCalendarInsights,
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     Builder(
                       builder: (context) {

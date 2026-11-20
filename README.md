@@ -81,6 +81,57 @@ flutter run -d chrome
 - `POST /api/mobile/ai` — Insights IA contextuels pour les 7 modules (`teams`, `kanban`, `tasks`, `calendar`, `chat`, `files`, `coaching`).
 - `POST /api/mobile/ai/generate` — Génération et persistance IA (`AI_GENERATE_KANBAN`, `AI_GENERATE_TASK`, `AI_ADD_SUBTASKS`, `AI_GENERATE_COLUMNS`).
 - `POST /api/mobile/assistant` & `GET /api/mobile/assistant/status` — Chatbot d'aide contextuel (Groq LLM + repli FAQ).
+- `GET /api/mobile/calendar/conflicts?projectId=<id>` — Détection des journées avec plusieurs événements ou charge élevée.
+- `GET /api/mobile/calendar/ics?projectId=<id>` — Export complet de l'agenda au format `.ics`.
+- `POST /api/mobile/calendar/natural` — Création d'une tâche ou d'un jalon à partir d'une phrase (Gemini, repli local).
+- `POST /api/mobile/calendar/weekly-summary` — Envoi immédiat du résumé de la semaine à l'utilisateur courant.
+- `POST /api/mobile/calendar/natural` — Analyse Gemini/local d'une phrase et création d'une tâche ou d'un jalon.
+
+---
+
+## Agenda avancé
+
+L'onglet **Agenda** affiche dans le même calendrier :
+
+- Les échéances des tâches.
+- Les jalons.
+- Les formations.
+- Les séances de coaching confirmées.
+
+Les nouvelles fonctionnalités sont :
+
+- Détection automatique des dates avec plusieurs événements ou une charge élevée.
+- Export du calendrier au format `.ics` pour Google Calendar, Outlook ou Apple Calendar.
+- Ajout d'événements en langage naturel, par exemple : `ajoute une revue demain à 14h`.
+- Résumé hebdomadaire envoyé par e-mail avec les tâches, jalons et échéances de la semaine.
+- Ouverture automatique sur le mois contenant le prochain événement.
+
+Le traitement en langage naturel utilise Gemini côté backend. Le moteur local reste
+utilisable si Gemini ne répond pas ou si aucune clé n'est configurée.
+
+---
+
+## Configuration IA et e-mail
+
+Ajouter les variables nécessaires dans `backend/.env` :
+
+```env
+GEMINI_API_KEY=<clé Gemini>
+GEMINI_MODEL=gemini-flash-lite-latest
+GROQ_API_KEY=<clé Groq>
+GROQ_MODEL=openai/gpt-oss-20b
+
+MAIL_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<adresse Gmail>
+SMTP_PASS=<mot de passe applicatif Gmail>
+MAIL_FROM="StudyFlow <adresse Gmail>"
+```
+
+Ne jamais publier les clés API, mots de passe SMTP ou mots de passe applicatifs dans
+Git ou dans une version Flutter distribuée. Toutes les clés doivent rester dans
+`backend/.env`, qui ne doit pas être envoyé au dépôt.
 
 ---
 

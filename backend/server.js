@@ -1415,6 +1415,282 @@ app.get('/api/mobile/reports/:id', async (req, res) => {
 });
 
 // -------------------------------------------------------------
+// OUTILS AVANCÉS DE L'AGENDA
+// -------------------------------------------------------------
+function calendarKey(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+app.get('/api/mobile/calendar/conflicts', async (req, res) => {
+  try {
+    const projectId = req.query.projectId;
+    if (!projectId) return res.status(400).json({ ok: false, error: 'projectId requis.' });
+
+    const [tasks, milestones, trainings, coachingSessions] = await Promise.all([
+      prisma.task.findMany({ where: { projectId, archivedAt: null }, include: { column: true } }),
+      prisma.milestone.findMany({ where: { projectId } }),
+      prisma.training.findMany({ where: { teamId: (await prisma.project.findUnique({ where: { id: projectId }, select: { teamId: true } }))?.teamId } }),
+      prisma.coachingSession.findMany({ where: { projectId } }),
+    ]);
+    const eventsByDay = new Map();
+    const add = (date, title, type) => {
+      if (!date) return;
+      const key = calendarKey(date);
+      if (!eventsByDay.has(key)) eventsByDay.set(key, []);
+      eventsByDay.get(key).push({ title, type });
+    };
+    tasks.forEach((task) => add(task.dueDate, task.title, 'TASK'));
+    milestones.forEach((milestone) => add(milestone.date, milestone.title, 'MILESTONE'));
+    trainings.forEach((training) => add(training.startsAt, training.title, 'TRAINING'));
+    coachingSessions.forEach((session) => add(session.scheduledAt, session.topic, 'COACHING'));
+
+    const days = [...eventsByDay.entries()]
+      .map(([date, events]) => ({
+        date,
+        eventCount: events.length,
+        taskCount: events.filter((event) => event.type === 'TASK').length,
+        conflict: events.length >= 2,
+        overloaded: events.filter((event) => event.type === 'TASK').length >= 4,
+        events,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return res.json({
+      ok: true,
+      data: {
+        days,
+        conflictsCount: days.filter((day) => day.conflict).length,
+        overloadedCount: days.filter((day) => day.overloaded).length,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+function escapeIcs(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;');
+}
+
+app.get('/api/mobile/calendar/ics', async (req, res) => {
+  try {
+    const projectId = req.query.projectId;
+    if (!projectId) return res.status(400).json({ ok: false, error: 'projectId requis.' });
+    const [project, tasks, milestones, coachingSessions] = await Promise.all([
+      prisma.project.findUnique({ where: { id: projectId } }),
+      prisma.task.findMany({ where: { projectId, archivedAt: null } }),
+      prisma.milestone.findMany({ where: { projectId } }),
+      prisma.coachingSession.findMany({ where: { projectId } }),
+    ]);
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//StudyFlow//Agenda//FR',
+      'CALSCALE:GREGORIAN',
+      `X-WR-CALNAME:${escapeIcs(project?.name || 'StudyFlow')}`,
+    ];
+    tasks.forEach((task) => {
+      if (!task.dueDate) return;
+      const d = new Date(task.dueDate);
+      const date = d.toISOString().slice(0, 10).replace(/-/g, '');
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:task-${task.id}@studyflow`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART;VALUE=DATE:${date}`,
+        `SUMMARY:${escapeIcs(task.title)}`,
+        `DESCRIPTION:${escapeIcs(`Tâche ${task.priority}${task.description ? ` - ${task.description}` : ''}`)}`,
+        'END:VEVENT',
+      );
+    });
+    milestones.forEach((milestone) => {
+      const date = new Date(milestone.date).toISOString().slice(0, 10).replace(/-/g, '');
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:milestone-${milestone.id}@studyflow`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART;VALUE=DATE:${date}`,
+        `SUMMARY:${escapeIcs(milestone.title)}`,
+        `DESCRIPTION:${escapeIcs(milestone.description || 'Jalon StudyFlow')}`,
+        'END:VEVENT',
+      );
+    });
+    coachingSessions.forEach((session) => {
+      if (!session.scheduledAt) return;
+      const start = new Date(session.scheduledAt);
+      const end = new Date(start.getTime() + (session.durationMin || 45) * 60000);
+      const formatDate = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:coaching-${session.id}@studyflow`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART:${formatDate(start)}`,
+        `DTEND:${formatDate(end)}`,
+        `SUMMARY:${escapeIcs(session.topic)}`,
+        `DESCRIPTION:${escapeIcs(session.meetingUrl || 'Séance de coaching StudyFlow')}`,
+        'END:VEVENT',
+      );
+    });
+    lines.push('END:VCALENDAR');
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="studyflow-agenda.ics"');
+    return res.send(lines.join('\r\n'));
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+async function parseNaturalCalendarEvent(text) {
+  const prompt = `Extrait l'action calendrier suivante en JSON strict: {"type":"MILESTONE"|"TASK","title":string,"date":"YYYY-MM-DD","description":string,"priority":"BASSE"|"NORMALE"|"HAUTE"|"URGENTE"}. Si aucune date claire, utilise une date vide. Texte: ${text}`;
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+          }),
+          signal: AbortSignal.timeout(20000),
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        const raw = result.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
+        if (raw) {
+          const clean = raw.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+          return JSON.parse(clean);
+        }
+      }
+    } catch (_) {}
+  }
+
+  const clean = text.trim();
+  const slash = clean.match(/(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?/);
+  let date = '';
+  if (/demain/i.test(clean)) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    date = d.toISOString().slice(0, 10);
+  } else if (slash) {
+    const day = Number(slash[1]);
+    const month = Number(slash[2]);
+    let year = slash[3] ? Number(slash[3]) : new Date().getFullYear();
+    if (year < 100) year += 2000;
+    date = new Date(year, month - 1, day).toISOString().slice(0, 10);
+  }
+  const title = clean
+    .replace(/^(ajoute|ajouter|crée|creer|programme|planifie|planifier)\s*/i, '')
+    .replace(/^(une?|le|la|un)\s+(tâche|jalon|rendez-vous)\s*/i, '')
+    .replace(/\s+(pour|le|au|dans)\s+.*/i, '')
+    .trim()
+    .slice(0, 80) || 'Nouvel événement';
+  return {
+    type: /jalon|deadline|échéance/i.test(clean) ? 'MILESTONE' : 'TASK',
+    title,
+    date,
+    description: clean,
+    priority: /urgent|critique/i.test(clean) ? 'URGENTE' : 'NORMALE',
+  };
+}
+
+app.post('/api/mobile/calendar/natural', async (req, res) => {
+  try {
+    const { userId, projectId, text } = req.body || {};
+    if (!userId || !projectId || !String(text || '').trim()) {
+      return res.status(400).json({ ok: false, error: 'userId, projectId et texte requis.' });
+    }
+    const role = await getUserRole(userId);
+    if (role === 'COACH') {
+      return res.status(403).json({ ok: false, error: 'Permission refusée pour le rôle Coach.' });
+    }
+    const parsed = await parseNaturalCalendarEvent(String(text).trim());
+    if (!parsed.date) {
+      return res.status(400).json({ ok: false, error: 'Date non reconnue. Indiquez une date comme 25/11/2026.' });
+    }
+    const date = new Date(`${parsed.date}T12:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      return res.status(400).json({ ok: false, error: 'Date invalide.' });
+    }
+
+    if (parsed.type === 'MILESTONE') {
+      const milestone = await prisma.milestone.create({
+        data: {
+          projectId,
+          title: String(parsed.title || 'Nouveau jalon').slice(0, 120),
+          date,
+          description: String(parsed.description || text).slice(0, 500),
+        },
+      });
+      return res.json({ ok: true, data: { source: process.env.GEMINI_API_KEY ? 'gemini' : 'local', created: 'MILESTONE', item: milestone } });
+    }
+
+    const column = await prisma.column.findFirst({ where: { projectId }, orderBy: { position: 'asc' } });
+    if (!column) return res.status(400).json({ ok: false, error: 'Aucune colonne disponible.' });
+    const task = await prisma.task.create({
+      data: {
+        projectId,
+        columnId: column.id,
+        title: String(parsed.title || 'Nouvelle tâche').slice(0, 120),
+        description: String(parsed.description || text).slice(0, 500),
+        priority: ['BASSE', 'NORMALE', 'HAUTE', 'URGENTE'].includes(parsed.priority) ? parsed.priority : 'NORMALE',
+        position: Date.now() % 100000,
+        dueDate: date,
+        createdById: userId,
+      },
+    });
+    return res.json({ ok: true, data: { source: process.env.GEMINI_API_KEY ? 'gemini' : 'local', created: 'TASK', item: task } });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/mobile/calendar/weekly-summary', async (req, res) => {
+  try {
+    const { userId, projectId } = req.body || {};
+    if (!userId || !projectId) return res.status(400).json({ ok: false, error: 'userId et projectId requis.' });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!user || !project) return res.status(404).json({ ok: false, error: 'Utilisateur ou projet introuvable.' });
+    const now = new Date();
+    const end = new Date(now.getTime() + 7 * 86400000);
+    const [tasks, milestones, columns] = await Promise.all([
+      prisma.task.findMany({ where: { projectId, dueDate: { gte: now, lte: end } } }),
+      prisma.milestone.findMany({ where: { projectId, date: { gte: now, lte: end } } }),
+      prisma.column.findMany({ where: { projectId, isDone: true } }),
+    ]);
+    const doneIds = new Set(columns.map((column) => column.id));
+    const overdueCount = await prisma.task.count({
+      where: { projectId, dueDate: { lt: now }, completedAt: null, columnId: { notIn: [...doneIds] } },
+    });
+    const upcoming = [
+      ...tasks.map((task) => `- ${new Date(task.dueDate).toLocaleDateString('fr-FR')} : ${task.title}`),
+      ...milestones.map((milestone) => `- ${new Date(milestone.date).toLocaleDateString('fr-FR')} : ${milestone.title}`),
+    ].join('\n');
+    mailer.queue(prisma, userId, 'weeklySummary', {
+      projectName: project.name,
+      period: `${now.toLocaleDateString('fr-FR')} - ${end.toLocaleDateString('fr-FR')}`,
+      taskCount: tasks.length,
+      overdueCount,
+      milestoneCount: milestones.length,
+      upcoming,
+    });
+    return res.json({ ok: true, data: { queued: true } });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// -------------------------------------------------------------
 // IA / ML locale déterministe par module
 // -------------------------------------------------------------
 app.get('/api/mobile/ai', (req, res) => {
