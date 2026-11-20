@@ -163,13 +163,16 @@ invent tasks.
 
 ### Files and sharing
 
-Files are uploaded through the backend and connected to project and task context.
-Metadata and versions allow the app to distinguish one file from its updated versions.
-Uploading and deleting remain restricted to users allowed to modify project content.
+Files are uploaded through the backend (`UPLOAD_FILE`) and stored on disk in `backend/uploads/`
+with relational metadata and `FileVersion` history in SQLite. The module supports uploading
+real files, creating Markdown/text notes directly, uploading new versions (`UPLOAD_FILE_VERSION`),
+renaming (`RENAME_FILE`), searching and filtering by category (Documents, Images, Spreadsheets,
+Other), inline image/text preview, direct download (`GET /api/mobile/files/:id`), and deletion
+for authorized users.
 
-The local file AI reports names and MIME categories, and it can warn about duplicate
-file names. This is deliberately explainable and does not upload document content to
-a third-party service.
+The file AI reports storage totals, MIME/type distribution, and duplicate-name warnings,
+augmented by Groq strategic recommendations when an API key is configured. Uploading,
+versioning, renaming, and deleting remain restricted to `OWNER` and `MEMBER` roles.
 
 ### Training and coaching
 
@@ -187,33 +190,48 @@ not see project management and team administration navigation.
 
 ## 4. Artificial intelligence
 
-The project uses two different AI approaches.
+The project combines three complementary AI layers:
 
-### Explainable local AI
+### Hybrid module insights (Local heuristics + Groq LLM)
 
-The local engine uses project data directly. It calculates:
+Every module (`teams`, `kanban`, `tasks`, `calendar`, `chat`, `files`, `coaching`) exposes
+real-time analytics via `POST /api/mobile/ai`:
 
-- Kanban WIP bottlenecks.
-- Task overdue risk and priority load.
-- Calendar deadline and conflict risks.
+- Kanban WIP bottlenecks and stalled cards (> 3 days without updates).
+- Task overdue risk, priority load, and "Top 3" daily focus.
+- Calendar deadline forecasts (72 h) and < 24 h milestone/deadline collisions.
 - Chat summaries and action-item candidates.
-- File classifications and duplicate-name warnings.
-- Team workload imbalance.
-- Coaching competency gaps and learning suggestions.
+- File storage totals, classifications, and duplicate-name warnings.
+- Team workload imbalance and idle member detection.
+- Coaching competency gaps, goal progress, and training recommendations.
 
-Every local result carries a source, confidence, explanation, timestamp, and an
-optional suggested action. It can operate without provider credentials and makes the
-same analysis available to the frontend in every module.
+Each insight carries a source (`local-heuristic` or `groq-llm`), confidence score, severity
+badge, metric chips, and an interactive action button that opens the contextual assistant
+with a pre-populated prompt. When `GROQ_API_KEY` is configured on the backend, Groq
+synthesizes an additional module-specific strategic recommendation from the live metrics.
 
-### Groq help assistant
+### Generative AI for Kanban, columns, tasks, and subtasks
 
-The help assistant is a separate conversational feature. Groq calls are made only on
-the backend. The backend gives the model the current user's role, assigned tasks,
-trainings, coaching sessions, and a knowledge document. The model cannot modify app
-data directly.
+Via `POST /api/mobile/ai/generate` (`backend/ai/generator.js`), authorized users (`OWNER`
+and `MEMBER`, while `COACH` / `VIEWER` are blocked with HTTP 403) can generate and persist
+structured workspace artifacts directly into SQLite:
 
-If no Groq key is configured or the provider fails, the backend uses keyword-based FAQ
-responses. This fallback is important for offline demonstrations and provider outages.
+- `AI_GENERATE_KANBAN`: creates a full Kanban board (columns with WIP limits, tasks,
+  priorities, due dates, and subtasks) in the current or a new project.
+- `AI_GENERATE_TASK`: creates a structured task with 3–5 subtasks from a natural-language prompt.
+- `AI_ADD_SUBTASKS`: breaks down an existing task into 3–5 actionable subtasks.
+- `AI_GENERATE_COLUMNS`: suggests and adds non-duplicate workflow columns to a project.
+
+All four generators use Groq JSON-mode output with deterministic local template fallbacks.
+
+### Contextual Groq help assistant
+
+The help assistant (`POST /api/mobile/assistant`) is a conversational guide running on the
+backend. It receives the current user's role, active screen module, projects and Kanban WIP
+state, assigned tasks, upcoming milestones, recent files, trainings, coaching sessions,
+skills, and goals, alongside the knowledge base (`backend/assistant/knowledge.js`), while
+strictly excluding private coach notes and other users' private records. If no Groq key
+is configured or the provider fails, it falls back to keyword-based FAQ responses.
 
 ## 5. Automatic mail notifications
 
