@@ -53,7 +53,7 @@ Provider-backed models can later implement the same capability DTOs. Provider
 credentials, prompt/model versions, redaction, rate limits, and audit records
 stay on the server. No provider dependency is required for local development.
 
-## Rollout
+## Rollout / summary
 
 1. Implement the shared capability DTOs and local calendar heuristics.
 2. Add the calendar recommendation card with evidence and refresh state.
