@@ -12,12 +12,14 @@ class AuthApiService {
     required String email,
     required String password,
     String? name,
+    String? inviteToken,
   }) async {
     final res = await _client.postJson('/api/mobile/auth', {
       'mode': mode,
       'email': email,
       'password': password,
-      'name': ?name,
+      if (name != null) 'name': name,
+      if (inviteToken != null) 'inviteToken': inviteToken,
     });
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode == 200 && data['ok'] == true) {

@@ -33,13 +33,14 @@ class AuthRepository {
     }
   }
 
-  Future<AppUser?> register(String name, String email, String password) async {
+  Future<AppUser?> register(String name, String email, String password, String inviteToken) async {
     try {
       final data = await _api.postAuth(
         mode: 'register',
         name: name,
         email: email,
         password: password,
+        inviteToken: inviteToken,
       );
       if (data != null && data['user'] != null) {
         return AppUser.fromJson(data['user'] as Map<String, dynamic>);

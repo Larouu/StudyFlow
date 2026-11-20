@@ -33,12 +33,12 @@ mixin AuthProviderMixin on StudyFlowStoreBase {
     return true;
   }
 
-  Future<bool> register(String name, String email, String password) async {
+  Future<bool> register(String name, String email, String password, String inviteToken) async {
     isLoading = true;
     statusMessage = null;
     notifyListeners();
 
-    final user = await authRepository.register(name, email, password);
+    final user = await authRepository.register(name, email, password, inviteToken);
     if (user == null) {
       isLoading = false;
       statusMessage = 'Impossible de créer le compte (e-mail déjà utilisé ou invalide).';

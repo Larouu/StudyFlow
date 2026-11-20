@@ -312,5 +312,27 @@ mixin KanbanProviderMixin on StudyFlowStoreBase {
       if (color != null) 'color': color,
     });
   }
+
+  Future<bool> deleteProject(String projectId) async {
+    if (currentUser == null ||
+        (currentUser!.role != UserRole.owner &&
+            currentUser!.role != UserRole.admin)) {
+      return false;
+    }
+    if (projects.length <= 1) return false;
+    final ok = await kanbanRepo.sync('DELETE_PROJECT', currentUser!.id, {
+      'projectId': projectId,
+    });
+    if (!ok) return false;
+    projects = projects.where((p) => p.id != projectId).toList();
+    columns = columns.where((c) => c.projectId != projectId).toList();
+    tasks = tasks.where((t) => t.projectId != projectId).toList();
+    milestones = milestones.where((m) => m.projectId != projectId).toList();
+    files = files.where((f) => f.projectId != projectId).toList();
+    activeProjectId = projects.first.id;
+    notifyListeners();
+    await hydrateFromPrisma();
+    return true;
+  }
 }
 

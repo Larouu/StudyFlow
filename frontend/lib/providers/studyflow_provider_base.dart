@@ -7,6 +7,7 @@ import '../repositories/communication/communication_repository.dart';
 import '../repositories/kanban/kanban_repository.dart';
 import '../repositories/studyflow_repository.dart';
 import '../services/prisma_api_service.dart';
+import '../services/assistant/assistant_api_service.dart';
 import '../services/seed_data.dart';
 
 abstract class StudyFlowStoreBase extends ChangeNotifier {
@@ -55,6 +56,17 @@ abstract class StudyFlowStoreBase extends ChangeNotifier {
   List<CoachingSessionItem> coachingSessions = StudyFlowSeedData.initialSessions();
   List<CoachingGoalItem> coachingGoals = StudyFlowSeedData.initialGoals();
   List<SkillLevelItem> skillLevels = StudyFlowSeedData.initialSkills();
+
+  Future<String> askAssistant(
+    String message, {
+    List<AssistantMessage> history = const [],
+  }) async {
+    final user = currentUser;
+    if (user == null) return 'Veuillez vous connecter.';
+    return _api.assistant.ask(userId: user.id, message: message, history: history);
+  }
+
+  Future<Map<String, dynamic>> assistantStatus() => _api.assistant.status();
 
   Future<List<Map<String, dynamic>>> generateAiInsights(
     String module, {

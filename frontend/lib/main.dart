@@ -8,6 +8,7 @@ import 'screens/modules/tasks_screen.dart';
 import 'screens/modules/teams_overview_screen.dart';
 import 'screens/modules/training_coaching_screen.dart';
 import 'providers/studyflow_provider.dart';
+import 'widgets/assistant_chat.dart';
 import 'widgets/studyflow_logo.dart';
 
 void main() => runApp(const StudyFlowApp());
@@ -237,6 +238,7 @@ class _StudyFlowShellState extends State<StudyFlowShell> {
               ],
             )
           : bodyContent,
+      floatingActionButton: AssistantFab(store: widget.store),
       bottomNavigationBar: isWide
           ? null
           : NavigationBar(

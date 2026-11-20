@@ -20,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController(text: 'password123');
+  final _inviteTokenCtrl = TextEditingController();
   late final TextEditingController _urlCtrl;
   bool _showServerConfig = false;
 
@@ -51,6 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _inviteTokenCtrl.dispose();
     _urlCtrl.dispose();
     super.dispose();
   }
@@ -58,7 +60,12 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     widget.store.updateServerUrl(_urlCtrl.text);
     if (_isRegisterMode) {
-      await widget.store.register(_nameCtrl.text, _emailCtrl.text, _passCtrl.text);
+      await widget.store.register(
+        _nameCtrl.text,
+        _emailCtrl.text,
+        _passCtrl.text,
+        _inviteTokenCtrl.text,
+      );
     } else {
       await widget.store.login(_emailCtrl.text, _passCtrl.text);
     }
@@ -227,6 +234,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _nameCtrl,
                             style: const TextStyle(color: Colors.white, fontSize: 14),
                             decoration: _inputDeco('Nom complet', Icons.person_outline),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _inviteTokenCtrl,
+                            textCapitalization: TextCapitalization.characters,
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            decoration: _inputDeco('Code d’invitation de l’équipe', Icons.group_add_outlined),
                           ),
                           const SizedBox(height: 12),
                         ],

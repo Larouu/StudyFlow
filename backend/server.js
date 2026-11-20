@@ -1,7 +1,11 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 const ai = require('./ai');
+const mailer = require('./mailer');
+const scheduler = require('./mailer/scheduler');
+const assistant = require('./assistant');
 
 const path = require('path');
 const fs = require('fs');
@@ -23,6 +27,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '25mb' }));
 
+// Helper : e-mail asynchrone (n'échoue jamais, ne bloque pas la réponse)
+const notifyUser = (userId, template, data) => mailer.queue(prisma, userId, template, data);
+
 // Helper : récupérer le rôle d'un membre
 async function getUserRole(userId) {
   const member = await prisma.teamMember.findFirst({ where: { userId } });
@@ -40,7 +47,7 @@ async function getUserTeamId(userId) {
 // -------------------------------------------------------------
 app.post('/api/mobile/auth', async (req, res) => {
   try {
-    const { mode, email, password, name } = req.body;
+    const { mode, email, password, name, inviteToken } = req.body;
     const normalizedEmail = (email || '').trim().toLowerCase();
 
     if (mode === 'register') {
@@ -61,46 +68,25 @@ app.post('/api/mobile/auth', async (req, res) => {
         },
       });
 
-      const suffix = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const inviteCode = `SF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      const team = await prisma.team.create({
-        data: {
-          name: `Équipe de ${user.name.split(' ')[0]}`,
-          slug: `team-${suffix}`,
-          ownerId: user.id,
-          inviteToken: inviteCode,
-        },
+      const normalizedInviteToken = (inviteToken || '').trim();
+      if (!normalizedInviteToken) {
+        await prisma.user.delete({ where: { id: user.id } });
+        return res.status(400).json({ ok: false, error: 'Code d’invitation requis pour rejoindre une équipe.' });
+      }
+
+      const team = await prisma.team.findUnique({
+        where: { inviteToken: normalizedInviteToken },
       });
+      if (!team) {
+        await prisma.user.delete({ where: { id: user.id } });
+        return res.status(404).json({ ok: false, error: 'Code d’invitation invalide.' });
+      }
 
       await prisma.teamMember.create({
-        data: { teamId: team.id, userId: user.id, role: 'OWNER' },
+        data: { teamId: team.id, userId: user.id, role: 'MEMBER' },
       });
 
-      const starterProject = await prisma.project.create({
-        data: {
-          teamId: team.id,
-          name: 'Mon Projet',
-          description: 'Espace de travail personnel',
-          color: '#4f46e5',
-        },
-      });
-
-      await prisma.column.createMany({
-        data: [
-          { projectId: starterProject.id, name: 'À faire', position: 1000, isDone: false },
-          { projectId: starterProject.id, name: 'En cours', position: 2000, wipLimit: 3, isDone: false },
-          { projectId: starterProject.id, name: 'Terminé', position: 3000, isDone: true },
-        ],
-      });
-
-      await prisma.channel.create({
-        data: {
-          teamId: team.id,
-          projectId: starterProject.id,
-          name: 'Général',
-          type: 'PROJECT',
-        },
-      });
+      notifyUser(user.id, 'welcome', {});
 
       return res.json({
         ok: true,
@@ -109,7 +95,7 @@ app.post('/api/mobile/auth', async (req, res) => {
           name: user.name,
           email: user.email,
           avatar: user.image,
-          role: 'OWNER',
+          role: 'MEMBER',
         },
       });
     }
@@ -416,6 +402,23 @@ app.post('/api/mobile/sync', async (req, res) => {
           },
         });
 
+        {
+          const [actor, project] = await Promise.all([
+            prisma.user.findUnique({ where: { id: userId } }),
+            prisma.project.findUnique({ where: { id: projectId } }),
+          ]);
+          for (const a of task.assignees) {
+            if (a.userId === userId) continue; // pas d'e-mail pour soi-même
+            notifyUser(a.userId, 'taskAssigned', {
+              taskTitle: task.title,
+              projectName: project ? project.name : '',
+              assignedBy: actor ? actor.name : 'Un membre',
+              dueDate: task.dueDate,
+              priority: task.priority,
+            });
+          }
+        }
+
         return res.json({ ok: true, data: task });
       }
 
@@ -461,7 +464,11 @@ app.post('/api/mobile/sync', async (req, res) => {
         const { taskId, title, description, priority, columnId, dueDate, assigneeIds } = payload;
         const targetCol = columnId ? await prisma.column.findUnique({ where: { id: columnId } }) : null;
 
+        let newlyAssigned = [];
         if (Array.isArray(assigneeIds)) {
+          const before = await prisma.taskAssignee.findMany({ where: { taskId } });
+          const beforeIds = new Set(before.map((a) => a.userId));
+          newlyAssigned = assigneeIds.filter((uid) => !beforeIds.has(uid) && uid !== userId);
           await prisma.taskAssignee.deleteMany({ where: { taskId } });
           if (assigneeIds.length > 0) {
             await prisma.taskAssignee.createMany({
@@ -482,6 +489,22 @@ app.post('/api/mobile/sync', async (req, res) => {
               : {}),
           },
         });
+
+        if (newlyAssigned.length) {
+          const [actor, project] = await Promise.all([
+            prisma.user.findUnique({ where: { id: userId } }),
+            prisma.project.findUnique({ where: { id: updatedTask.projectId } }),
+          ]);
+          for (const uid of newlyAssigned) {
+            notifyUser(uid, 'taskAssigned', {
+              taskTitle: updatedTask.title,
+              projectName: project ? project.name : '',
+              assignedBy: actor ? actor.name : 'Un membre',
+              dueDate: updatedTask.dueDate,
+              priority: updatedTask.priority,
+            });
+          }
+        }
 
         return res.json({ ok: true, data: updatedTask });
       }
@@ -559,6 +582,13 @@ app.post('/api/mobile/sync', async (req, res) => {
         const enrollment = await prisma.trainingEnrollment.create({
           data: { trainingId, userId, status: 'ENROLLED' },
         });
+        notifyUser(userId, 'trainingEnrolled', {
+          title: training.title,
+          startsAt: training.startsAt,
+          mode: training.mode,
+          location: training.location,
+          meetingUrl: training.meetingUrl,
+        });
         return res.json({ ok: true, data: enrollment });
       }
 
@@ -587,6 +617,13 @@ app.post('/api/mobile/sync', async (req, res) => {
             status: 'REQUESTED',
           },
         });
+        {
+          const coachee = await prisma.user.findUnique({ where: { id: userId } });
+          notifyUser(coachId, 'coachingRequested', {
+            coacheeName: coachee ? coachee.name : 'Un membre',
+            topic,
+          });
+        }
         return res.json({ ok: true, data: session });
       }
 
@@ -602,6 +639,15 @@ app.post('/api/mobile/sync', async (req, res) => {
             meetingUrl: `https://meet.jit.si/studyflow-coaching-${safeRoom}`,
           },
         });
+        {
+          const coach = await prisma.user.findUnique({ where: { id: session.coachId } });
+          notifyUser(session.coacheeId, 'coachingConfirmed', {
+            coachName: coach ? coach.name : 'Votre coach',
+            topic: session.topic,
+            scheduledAt: session.scheduledAt,
+            meetingUrl: session.meetingUrl,
+          });
+        }
         return res.json({ ok: true, data: session });
       }
 
@@ -745,7 +791,7 @@ app.post('/api/mobile/sync', async (req, res) => {
 
       // --- PROJETS (M2) ---
       case 'CREATE_PROJECT': {
-        if (isCoachOrViewer) {
+        if (isCoachOrViewer || (role !== 'OWNER' && role !== 'ADMIN')) {
           return res.status(403).json({ ok: false, error: 'Permission refusée (§4.2)' });
         }
         const { name, description, color, teamId } = payload;
@@ -769,7 +815,7 @@ app.post('/api/mobile/sync', async (req, res) => {
       }
 
       case 'UPDATE_PROJECT': {
-        if (isCoachOrViewer) {
+        if (isCoachOrViewer || (role !== 'OWNER' && role !== 'ADMIN')) {
           return res.status(403).json({ ok: false, error: 'Permission refusée (§4.2)' });
         }
         const { projectId, name, description, color } = payload;
@@ -782,6 +828,28 @@ app.post('/api/mobile/sync', async (req, res) => {
           },
         });
         return res.json({ ok: true, data: updated });
+      }
+
+      case 'DELETE_PROJECT': {
+        if (isCoachOrViewer || (role !== 'OWNER' && role !== 'ADMIN')) {
+          return res.status(403).json({ ok: false, error: 'Seul le propriétaire ou l’administrateur peut supprimer un projet.' });
+        }
+        const { projectId } = payload;
+        if (!projectId) {
+          return res.status(400).json({ ok: false, error: 'Projet requis.' });
+        }
+        const project = await prisma.project.findUnique({
+          where: { id: projectId },
+        });
+        if (!project) {
+          return res.status(404).json({ ok: false, error: 'Projet introuvable.' });
+        }
+        const teamId = await getUserTeamId(userId);
+        if (!teamId || project.teamId !== teamId) {
+          return res.status(403).json({ ok: false, error: 'Ce projet appartient à une autre équipe.' });
+        }
+        await prisma.project.delete({ where: { id: projectId } });
+        return res.json({ ok: true });
       }
 
       // --- ÉDITION / SUPPRESSION MESSAGES CHAT (M5) ---
@@ -954,6 +1022,11 @@ app.post('/api/mobile/sync', async (req, res) => {
           await prisma.teamMember.create({
             data: { teamId: team.id, userId, role: 'MEMBER' },
           });
+          const joiner = await prisma.user.findUnique({ where: { id: userId } });
+          notifyUser(team.ownerId, 'memberJoined', {
+            memberName: joiner ? joiner.name : 'Un membre',
+            teamName: team.name,
+          });
         }
         return res.json({ ok: true, data: team });
       }
@@ -981,6 +1054,17 @@ app.post('/api/mobile/sync', async (req, res) => {
         const member = await prisma.teamMember.create({
           data: { teamId, userId: targetUser.id, role: targetRole },
         });
+        {
+          const [team, inviter] = await Promise.all([
+            prisma.team.findUnique({ where: { id: teamId } }),
+            prisma.user.findUnique({ where: { id: userId } }),
+          ]);
+          notifyUser(targetUser.id, 'addedToTeam', {
+            teamName: team ? team.name : 'votre équipe',
+            role: targetRole,
+            invitedBy: inviter ? inviter.name : null,
+          });
+        }
         return res.json({ ok: true, data: member });
       }
 
@@ -991,6 +1075,13 @@ app.post('/api/mobile/sync', async (req, res) => {
         const { targetUserId, newRole } = payload;
         if (!targetUserId || !newRole) {
           return res.status(400).json({ ok: false, error: 'Paramètres manquants.' });
+        }
+        const allowedRoles = ['OWNER', 'ADMIN', 'MEMBER', 'COACH', 'VIEWER'];
+        if (!allowedRoles.includes(newRole)) {
+          return res.status(400).json({ ok: false, error: 'Rôle invalide.' });
+        }
+        if (role === 'ADMIN' && newRole === 'OWNER') {
+          return res.status(403).json({ ok: false, error: 'Seul le propriétaire peut attribuer le rôle OWNER.' });
         }
         if (targetUserId === userId) {
           return res.status(400).json({ ok: false, error: 'Vous ne pouvez pas modifier votre propre rôle.' });
@@ -1154,17 +1245,43 @@ app.post('/api/mobile/ai', async (req, res) => {
   }
 });
 
+// -------------------------------------------------------------
+// ASSISTANT D'AIDE (chatbot) : POST /api/mobile/assistant
+// -------------------------------------------------------------
+app.post('/api/mobile/assistant', async (req, res) => {
+  try {
+    const { userId, message, history } = req.body || {};
+    const result = await assistant.ask({ prisma, userId, message, history });
+    return res.json({ ok: true, data: result });
+  } catch (error) {
+    const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 500;
+    return res.status(status).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/mobile/assistant/status', (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      provider: process.env.GROQ_API_KEY ? 'groq' : 'faq',
+      mailEnabled: process.env.MAIL_ENABLED !== 'false',
+      smtpConfigured: Boolean(process.env.SMTP_HOST),
+    },
+  });
+});
+
 // Statut racine
 app.get('/', (req, res) => {
   res.json({
     status: 'StudyFlow Mobile REST API is running',
     version: '2.1.0',
     orm: 'Prisma SQLite',
-    endpoints: ['/api/mobile/auth', '/api/mobile/bootstrap', '/api/mobile/sync'],
+    endpoints: ['/api/mobile/auth', '/api/mobile/bootstrap', '/api/mobile/sync', '/api/mobile/ai', '/api/mobile/assistant'],
   });
 });
 
 app.listen(PORT, () => {
   console.log(`[StudyFlow Mobile Backend] REST API démarrée sur http://localhost:${PORT}`);
+  scheduler.start(prisma);
 });
 

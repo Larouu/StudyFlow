@@ -81,6 +81,80 @@ class TeamsOverviewScreen extends StatelessWidget {
             ),
           ),
         ],
+        if (activeUser.role == UserRole.owner || activeUser.role == UserRole.admin) ...[
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Console administrateur',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: () => _openProjectDialog(context),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Projet'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Gérez les projets, les membres et leurs rôles.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  ...store.projects.map((project) {
+                    final isActive = project.id == store.activeProjectId;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: ListTile(
+                        leading: Icon(
+                          isActive ? Icons.folder_special : Icons.folder_outlined,
+                          color: const Color(0xFF818CF8),
+                        ),
+                        title: Text(project.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(
+                          isActive ? 'Projet actif · ${project.description}' : project.description,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Sélectionner',
+                              icon: const Icon(Icons.check_circle_outline, size: 18),
+                              onPressed: () => store.selectProject(project.id),
+                            ),
+                            IconButton(
+                              tooltip: 'Modifier',
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              onPressed: () => _openProjectDialog(context, project),
+                            ),
+                            if (store.projects.length > 1)
+                              IconButton(
+                                tooltip: 'Supprimer',
+                                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                onPressed: () => _confirmDeleteProject(context, project),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 18),
         Wrap(
           spacing: 8,
@@ -214,6 +288,122 @@ class TeamsOverviewScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _openProjectDialog(BuildContext context, [ProjectItem? existing]) {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final descriptionCtrl = TextEditingController(text: existing?.description ?? '');
+    var color = existing?.color ?? '#4f46e5';
+    const colors = [
+      '#4f46e5',
+      '#0ea5e9',
+      '#10b981',
+      '#f59e0b',
+      '#ec4899',
+      '#8b5cf6',
+    ];
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: Text(existing == null ? 'Créer un projet' : 'Modifier le projet'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Nom du projet'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descriptionCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final value in colors)
+                      GestureDetector(
+                        onTap: () => setStateDialog(() => color = value),
+                        child: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: _parseColor(value),
+                          child: color == value
+                              ? const Icon(Icons.check, size: 16, color: Colors.white)
+                              : null,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            FilledButton(
+              onPressed: () async {
+                if (nameCtrl.text.trim().isEmpty) return;
+                if (existing == null) {
+                  await store.createProject(
+                    name: nameCtrl.text.trim(),
+                    description: descriptionCtrl.text.trim(),
+                    color: color,
+                  );
+                } else {
+                  await store.updateProject(
+                    existing.id,
+                    name: nameCtrl.text.trim(),
+                    description: descriptionCtrl.text.trim(),
+                    color: color,
+                  );
+                }
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+              },
+              child: Text(existing == null ? 'Créer' : 'Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteProject(BuildContext context, ProjectItem project) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer le projet'),
+        content: Text(
+          'Supprimer « ${project.name} » ? Ses tâches, colonnes, fichiers et jalons associés seront supprimés.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final ok = await store.deleteProject(project.id);
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(ok ? 'Projet supprimé.' : 'Impossible de supprimer ce projet.'),
+                ),
+              );
+            },
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _parseColor(String value) {
+    final parsed = int.tryParse(value.replaceFirst('#', 'FF'), radix: 16);
+    return parsed == null ? const Color(0xFF4F46E5) : Color(parsed);
   }
 
   void _openJoinTeamDialog(BuildContext context) {

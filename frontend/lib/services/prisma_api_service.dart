@@ -6,6 +6,7 @@ import 'communication/communication_api_service.dart';
 import 'kanban/kanban_api_service.dart';
 import 'sync/sync_api_service.dart';
 import 'ai/ai_api_service.dart';
+import 'assistant/assistant_api_service.dart';
 
 /// Façade unifiée sur les services HTTP organisés par module.
 class PrismaApiService {
@@ -17,6 +18,7 @@ class PrismaApiService {
     communication = CommunicationApiService(sync);
     coaching = CoachingApiService(sync);
     ai = AiApiService(_client);
+    assistant = AssistantApiService(_client);
   }
 
   final ApiClient _client;
@@ -27,6 +29,7 @@ class PrismaApiService {
   late final CommunicationApiService communication;
   late final CoachingApiService coaching;
   late final AiApiService ai;
+  late final AssistantApiService assistant;
 
   String get baseUrl => _client.baseUrl;
   set baseUrl(String value) => _client.baseUrl = value;
@@ -36,8 +39,15 @@ class PrismaApiService {
     required String email,
     required String password,
     String? name,
+    String? inviteToken,
   }) =>
-      auth.postAuth(mode: mode, email: email, password: password, name: name);
+      auth.postAuth(
+        mode: mode,
+        email: email,
+        password: password,
+        name: name,
+        inviteToken: inviteToken,
+      );
 
   Future<Map<String, dynamic>?> fetchBootstrap(String userId) => sync.fetchBootstrap(userId);
 
