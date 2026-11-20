@@ -47,7 +47,7 @@ flutter run -d chrome
 
 ---
 
-## 🎯 Évaluation & Séances (Alignement Pédagogique)
+## 🎯 Évaluation & Séances
 
 - **Séance 1 :** Interface graphique fluide, Material 3, navigation réactive et écrans de détails.
 - **Séance 2 (REST API & Consommation) :**
