@@ -20,7 +20,7 @@ Règles :
 BASE DE CONNAISSANCES
 ${KNOWLEDGE}`;
 
-async function buildContext(prisma, userId) {
+async function buildContext(prisma, userId, currentModule = null) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { teamMembers: { include: { team: true } } },
@@ -30,42 +30,77 @@ async function buildContext(prisma, userId) {
   const now = new Date();
   const teamIds = user.teamMembers.map((m) => m.teamId);
 
-  const tasks = await prisma.task.findMany({
-    where: {
-      assignees: { some: { userId } },
-      completedAt: null,
-      archivedAt: null,
-    },
-    include: { column: true, project: true },
-    orderBy: [{ dueDate: 'asc' }],
-    take: 15,
-  });
-
-  const trainings = await prisma.training.findMany({
-    where: { teamId: { in: teamIds }, startsAt: { gte: now }, status: 'PUBLISHED' },
-    include: { enrollments: { where: { userId } } },
-    orderBy: { startsAt: 'asc' },
-    take: 5,
-  });
-
-  // Jamais de notes privées ni de rapports : uniquement sujet, statut, date.
-  const sessions = await prisma.coachingSession.findMany({
-    where: { OR: [{ coachId: userId }, { coacheeId: userId }], status: { in: ['REQUESTED', 'CONFIRMED'] } },
-    select: { topic: true, status: true, scheduledAt: true, coachId: true },
-    take: 5,
-  });
+  const [projects, tasks, trainings, sessions, milestones, files, skills, goals] = await Promise.all([
+    prisma.project.findMany({
+      where: { teamId: { in: teamIds } },
+      include: { columns: { orderBy: { position: 'asc' }, include: { tasks: { where: { archivedAt: null }, select: { id: true } } } } },
+      take: 5,
+    }),
+    prisma.task.findMany({
+      where: {
+        assignees: { some: { userId } },
+        completedAt: null,
+        archivedAt: null,
+      },
+      include: { column: true, project: true },
+      orderBy: [{ dueDate: 'asc' }],
+      take: 15,
+    }),
+    prisma.training.findMany({
+      where: { teamId: { in: teamIds }, startsAt: { gte: now }, status: 'PUBLISHED' },
+      include: { enrollments: { where: { userId } } },
+      orderBy: { startsAt: 'asc' },
+      take: 5,
+    }),
+    // Jamais de notes privées ni de rapports : uniquement sujet, statut, date.
+    prisma.coachingSession.findMany({
+      where: { OR: [{ coachId: userId }, { coacheeId: userId }], status: { in: ['REQUESTED', 'CONFIRMED'] } },
+      select: { topic: true, status: true, scheduledAt: true, coachId: true },
+      take: 5,
+    }),
+    prisma.milestone.findMany({
+      where: { project: { teamId: { in: teamIds } }, date: { gte: now } },
+      orderBy: { date: 'asc' },
+      take: 5,
+    }),
+    prisma.file.findMany({
+      where: { project: { teamId: { in: teamIds } } },
+      select: { name: true, size: true, currentVersion: true },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+    }),
+    prisma.skillLevel.findMany({
+      where: { userId },
+      orderBy: { level: 'asc' },
+      take: 8,
+    }),
+    prisma.coachingGoal.findMany({
+      where: { userId },
+      take: 5,
+    }),
+  ]);
 
   const d = (x) => (x ? new Date(x).toISOString().slice(0, 16).replace('T', ' ') : 'aucune');
   const lines = [
     `Utilisateur : ${user.name}`,
     `Équipes/rôles : ${user.teamMembers.map((m) => `${m.team.name} (${m.role})`).join(', ') || 'aucune'}`,
+    ...(currentModule ? [`Module actif à l'écran : ${currentModule}`] : []),
     `Date actuelle : ${d(now)}`,
+    `Projets & Kanban (${projects.length}) :`,
+    ...projects.map((p) => `- "${p.name}" : ${p.columns.map((c) => `${c.name}=${c.tasks.length}${c.wipLimit ? `/${c.wipLimit}` : ''}`).join(', ')}`),
     `Tâches actives assignées (${tasks.length}) :`,
     ...tasks.map((t) => `- "${t.title}" | projet ${t.project.name} | colonne ${t.column.name} | priorité ${t.priority} | échéance ${d(t.dueDate)}${t.dueDate && t.dueDate < now ? ' | EN RETARD' : ''}`),
+    `Prochains jalons :`,
+    ...(milestones.length ? milestones.map((m) => `- "${m.title}" | ${d(m.date)}`) : ['- aucun']),
+    `Fichiers récents (${files.length}) :`,
+    ...(files.length ? files.map((f) => `- "${f.name}" (v${f.currentVersion}, ${Math.round((f.size || 0) / 1024)} Ko)`) : ['- aucun']),
     `Prochaines formations :`,
-    ...trainings.map((t) => `- "${t.title}" | ${d(t.startsAt)} | ${t.enrollments.length ? 'inscrit' : 'non inscrit'}`),
+    ...(trainings.length ? trainings.map((t) => `- "${t.title}" | ${d(t.startsAt)} | ${t.enrollments.length ? 'inscrit' : 'non inscrit'}`) : ['- aucune']),
     `Séances de coaching en cours :`,
-    ...sessions.map((s) => `- "${s.topic}" | ${s.status} | ${d(s.scheduledAt)} | vous êtes ${s.coachId === userId ? 'coach' : 'coaché'}`),
+    ...(sessions.length ? sessions.map((s) => `- "${s.topic}" | ${s.status} | ${d(s.scheduledAt)} | vous êtes ${s.coachId === userId ? 'coach' : 'coaché'}`) : ['- aucune']),
+    `Compétences & Objectifs :`,
+    ...skills.map((s) => `- Compétence "${s.skill}" : ${s.level}/5`),
+    ...goals.map((g) => `- Objectif "${g.title}" : ${g.progress}%`),
   ];
   return lines.join('\n');
 }
@@ -94,7 +129,7 @@ function rateLimited(userId) {
   return recent.length > 20;
 }
 
-async function ask({ prisma, userId, message, history = [] }) {
+async function ask({ prisma, userId, message, history = [], module = null }) {
   const text = String(message || '').trim().slice(0, MAX_MESSAGE);
   if (!userId || !text) {
     const err = new Error('userId et message requis');
@@ -106,7 +141,7 @@ async function ask({ prisma, userId, message, history = [] }) {
     err.status = 429;
     throw err;
   }
-  const context = await buildContext(prisma, userId);
+  const context = await buildContext(prisma, userId, module);
   if (!context) {
     const err = new Error('Utilisateur introuvable');
     err.status = 404;

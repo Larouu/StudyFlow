@@ -95,5 +95,33 @@ mixin CommunicationProviderMixin on StudyFlowStoreBase {
 
     await communicationRepo.sync('DELETE_FILE', currentUser!.id, {'fileId': fileId});
   }
+
+  Future<bool> uploadFileVersion({
+    required String fileId,
+    required List<int> bytes,
+    String? mimeType,
+  }) async {
+    if (currentUser == null || currentUser!.isCoachOrViewer) return false;
+    final ok = await communicationRepo.sync('UPLOAD_FILE_VERSION', currentUser!.id, {
+      'fileId': fileId,
+      if (mimeType != null) 'mimeType': mimeType,
+      'size': bytes.length,
+      'contentBase64': base64Encode(bytes),
+    });
+    await hydrateFromPrisma();
+    return ok;
+  }
+
+  Future<bool> renameFile(String fileId, String newName) async {
+    if (currentUser == null || currentUser!.isCoachOrViewer) return false;
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return false;
+    final ok = await communicationRepo.sync('RENAME_FILE', currentUser!.id, {
+      'fileId': fileId,
+      'name': trimmed,
+    });
+    await hydrateFromPrisma();
+    return ok;
+  }
 }
 

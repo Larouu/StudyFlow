@@ -24,8 +24,15 @@ class AssistantFab extends StatelessWidget {
 }
 
 class AssistantSheet extends StatefulWidget {
-  const AssistantSheet({super.key, required this.store});
+  const AssistantSheet({
+    super.key,
+    required this.store,
+    this.module,
+    this.initialPrompt,
+  });
   final StudyFlowStore store;
+  final String? module;
+  final String? initialPrompt;
 
   @override
   State<AssistantSheet> createState() => _AssistantSheetState();
@@ -38,7 +45,7 @@ class _AssistantSheetState extends State<AssistantSheet> {
   final List<AssistantMessage> _messages = [
     const AssistantMessage(
       role: 'assistant',
-      content: 'Bonjour ! Je peux vous aider à utiliser StudyFlow : tâches, Kanban, équipes, formations, coaching. Que souhaitez-vous faire ?',
+      content: 'Bonjour ! Je peux vous aider à utiliser StudyFlow : tâches, Kanban, équipes, fichiers, formations, coaching. Que souhaitez-vous faire ?',
     ),
   ];
   bool _loading = false;
@@ -49,13 +56,60 @@ class _AssistantSheetState extends State<AssistantSheet> {
     widget.store.assistantStatus().then((status) {
       if (mounted) setState(() => _status = status);
     });
+    if (widget.initialPrompt != null && widget.initialPrompt!.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _send(widget.initialPrompt);
+      });
+    }
   }
 
-  static const _suggestions = [
-    'Comment créer une tâche ?',
-    'Quelles sont mes échéances ?',
-    'Comment demander un coaching ?',
-  ];
+  List<String> get _suggestions {
+    switch (widget.module) {
+      case 'kanban':
+        return const [
+          'Comment débloquer une colonne WIP ?',
+          'Quelles cartes sont en retard ?',
+          'Comment déplacer une tâche ?',
+        ];
+      case 'tasks':
+        return const [
+          'Quelles sont mes 3 priorités ?',
+          'Quelles tâches sont en retard ?',
+          'Comment découper une tâche avec l’IA ?',
+        ];
+      case 'teams':
+        return const [
+          'Comment inviter un membre ?',
+          'Quel est mon rôle dans StudyFlow ?',
+          'Quelles permissions a un coach ?',
+        ];
+      case 'calendar':
+        return const [
+          'Quelles sont mes prochaines échéances ?',
+          'Comment ajouter un jalon ?',
+          'Comment exporter un rapport ?',
+        ];
+      case 'files':
+      case 'chat':
+        return const [
+          'Comment versionner un fichier ?',
+          'Quels fichiers sont partagés ?',
+          'Résume l’activité récente',
+        ];
+      case 'coaching':
+        return const [
+          'Quelle formation me convient ?',
+          'Comment demander un coaching ?',
+          'Quand est ma prochaine séance ?',
+        ];
+      default:
+        return const [
+          'Quelles sont mes 3 priorités ?',
+          'Quelles sont mes échéances ?',
+          'Comment demander un coaching ?',
+        ];
+    }
+  }
 
   Future<void> _send([String? preset]) async {
     final text = (preset ?? _ctrl.text).trim();
@@ -71,7 +125,7 @@ class _AssistantSheetState extends State<AssistantSheet> {
     _ctrl.clear();
     _scrollDown();
 
-    final reply = await widget.store.askAssistant(text, history: history);
+    final reply = await widget.store.askAssistant(text, history: history, module: widget.module);
     if (!mounted) return;
     setState(() {
       _messages.add(AssistantMessage(role: 'assistant', content: reply));

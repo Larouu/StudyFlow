@@ -26,4 +26,27 @@ class AiApiService {
     } catch (_) {}
     return [];
   }
+
+  Future<Map<String, dynamic>?> generate({
+    required String type,
+    required String userId,
+    Map<String, dynamic> payload = const {},
+  }) async {
+    try {
+      final response = await _client.postJson(
+        '/api/mobile/ai/generate',
+        {
+          'type': type,
+          'userId': userId,
+          'payload': payload,
+        },
+        timeout: const Duration(seconds: 20),
+      );
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && json['ok'] == true && json['data'] is Map) {
+        return Map<String, dynamic>.from(json['data'] as Map);
+      }
+    } catch (_) {}
+    return null;
+  }
 }

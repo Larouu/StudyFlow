@@ -60,10 +60,11 @@ abstract class StudyFlowStoreBase extends ChangeNotifier {
   Future<String> askAssistant(
     String message, {
     List<AssistantMessage> history = const [],
+    String? module,
   }) async {
     final user = currentUser;
     if (user == null) return 'Veuillez vous connecter.';
-    return _api.assistant.ask(userId: user.id, message: message, history: history);
+    return _api.assistant.ask(userId: user.id, message: message, history: history, module: module);
   }
 
   Future<Map<String, dynamic>> assistantStatus() => _api.assistant.status();
@@ -83,6 +84,19 @@ abstract class StudyFlowStoreBase extends ChangeNotifier {
       module: module,
       userId: user.id,
       payload: mergedPayload,
+    );
+  }
+
+  Future<Map<String, dynamic>?> generateWithAi(
+    String type, {
+    Map<String, dynamic> payload = const {},
+  }) async {
+    final user = currentUser;
+    if (user == null) return null;
+    return _api.ai.generate(
+      type: type,
+      userId: user.id,
+      payload: payload,
     );
   }
 

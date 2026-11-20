@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/models/studyflow_models.dart';
 import '../../providers/studyflow_provider.dart';
 import '../../widgets/ai_insights_panel.dart';
@@ -186,51 +187,259 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-class FilesScreen extends StatelessWidget {
+class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key, required this.store});
   final StudyFlowStore store;
 
   @override
+  State<FilesScreen> createState() => _FilesScreenState();
+}
+
+class _FilesScreenState extends State<FilesScreen> {
+  String _search = '';
+  String _category = 'ALL';
+  bool _uploading = false;
+
+  String _fileCategory(FileAssetItem f) {
+    final lower = f.name.toLowerCase();
+    if (f.mimeType.startsWith('image/') ||
+        ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].any(lower.endsWith)) {
+      return 'IMAGE';
+    }
+    if (['.pdf', '.doc', '.docx', '.txt', '.md'].any(lower.endsWith) ||
+        f.mimeType.contains('pdf') ||
+        f.mimeType.startsWith('text/')) {
+      return 'DOC';
+    }
+    if (['.xls', '.xlsx', '.csv'].any(lower.endsWith)) {
+      return 'SHEET';
+    }
+    return 'OTHER';
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes o';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} Ko';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} Mo';
+  }
+
+  Future<void> _downloadFile(BuildContext context, FileAssetItem f) async {
+    final uri = Uri.tryParse('${widget.store.serverUrl}/api/mobile/files/${f.id}');
+    if (uri == null) return;
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible de télécharger le fichier.')),
+      );
+    }
+  }
+
+  Future<void> _createTextNoteDialog(BuildContext context) async {
+    final nameCtrl = TextEditingController(text: 'notes-reunion.md');
+    final bodyCtrl = TextEditingController();
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Créer une note stockée'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Nom du fichier (.md ou .txt)'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: bodyCtrl,
+                minLines: 4,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  labelText: 'Contenu',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enregistrer')),
+        ],
+      ),
+    );
+    if (created != true) return;
+    final fileName = nameCtrl.text.trim().isEmpty ? 'note.txt' : nameCtrl.text.trim();
+    final bytes = Uint8List.fromList(utf8.encode(bodyCtrl.text));
+    setState(() => _uploading = true);
+    final ok = await widget.store.uploadRealFile(name: fileName, bytes: bytes);
+    if (mounted) setState(() => _uploading = false);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Note « $fileName » enregistrée.' : 'Échec de l’enregistrement.')),
+      );
+    }
+  }
+
+  Future<void> _renameFileDialog(BuildContext context, FileAssetItem f) async {
+    final ctrl = TextEditingController(text: f.name);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Renommer le fichier'),
+        content: TextField(controller: ctrl, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Renommer')),
+        ],
+      ),
+    );
+    if (ok == true && ctrl.text.trim().isNotEmpty) {
+      await widget.store.renameFile(f.id, ctrl.text.trim());
+    }
+  }
+
+  Future<void> _uploadNewVersion(BuildContext context, FileAssetItem f) async {
+    try {
+      final picked = await FilePicker.pickFile();
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > 18 * 1024 * 1024) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Fichier trop volumineux (max 18 Mo).')),
+          );
+        }
+        return;
+      }
+      setState(() => _uploading = true);
+      final ok = await widget.store.uploadFileVersion(fileId: f.id, bytes: bytes);
+      if (mounted) setState(() => _uploading = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ok ? 'Nouvelle version téléversée pour « ${f.name} ».' : 'Échec du versionnage.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _uploading = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur de sélection : $e')),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final files = store.currentFiles;
+    final allFiles = widget.store.currentFiles;
+    final totalBytes = allFiles.fold<int>(0, (sum, f) => sum + f.size);
+    final files = allFiles.where((f) {
+      if (_category != 'ALL' && _fileCategory(f) != _category) return false;
+      if (_search.trim().isNotEmpty &&
+          !f.name.toLowerCase().contains(_search.trim().toLowerCase())) {
+        return false;
+      }
+      return true;
+    }).toList();
 
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: AiInsightsPanel(
-            store: store,
+            store: widget.store,
             module: 'files',
             title: 'Assistant IA des fichiers',
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Fichiers du projet (${files.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              if (store.currentUser?.isCoachOrViewer != true)
-                FilledButton.icon(
-                  onPressed: () => _pickAndUploadFile(context),
-                  icon: const Icon(Icons.upload_file, size: 18),
-                  label: const Text('Téléverser'),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Stockage du projet (${allFiles.length})',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text('${_formatSize(totalBytes)} utilisés',
+                            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                  if (widget.store.currentUser?.isCoachOrViewer != true) ...[
+                    OutlinedButton.icon(
+                      onPressed: _uploading ? null : () => _createTextNoteDialog(context),
+                      icon: const Icon(Icons.note_add_outlined, size: 17),
+                      label: const Text('Note'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _uploading ? null : () => _pickAndUploadFile(context),
+                      icon: _uploading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.upload_file, size: 18),
+                      label: const Text('Téléverser'),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                decoration: InputDecoration(
+                  hintText: 'Rechercher un fichier…',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  isDense: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
+                onChanged: (v) => setState(() => _search = v),
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final entry in const [
+                      ('ALL', 'Tous'),
+                      ('DOC', 'Documents'),
+                      ('IMAGE', 'Images'),
+                      ('SHEET', 'Tableurs'),
+                      ('OTHER', 'Autres'),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(entry.$2, style: const TextStyle(fontSize: 12)),
+                          selected: _category == entry.$1,
+                          onSelected: (_) => setState(() => _category = entry.$1),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
         Expanded(
           child: files.isEmpty
-              ? const Center(child: Text('Aucun fichier partagé.', style: TextStyle(color: Colors.grey)))
+              ? const Center(child: Text('Aucun fichier correspondant.', style: TextStyle(color: Colors.grey)))
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                   itemCount: files.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, idx) {
                     final f = files[idx];
-                    final sizeKb = (f.size / 1024).round();
                     final isImage = f.mimeType.startsWith('image/');
-                    final fileUrl = '${store.serverUrl}/api/mobile/files/${f.id}?inline=1';
+                    final fileUrl = '${widget.store.serverUrl}/api/mobile/files/${f.id}?inline=1';
 
                     return Card(
                       child: ListTile(
@@ -256,8 +465,10 @@ class FilesScreen extends StatelessWidget {
                                 color: const Color(0xFF4F46E5),
                               ),
                         title: Text(f.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        subtitle: Text('$sizeKb Ko · ${f.createdAt.day}/${f.createdAt.month}/${f.createdAt.year}',
-                            style: const TextStyle(fontSize: 11)),
+                        subtitle: Text(
+                          '${_formatSize(f.size)} · ${f.createdAt.day}/${f.createdAt.month}/${f.createdAt.year}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -266,11 +477,27 @@ class FilesScreen extends StatelessWidget {
                               icon: const Icon(Icons.visibility_outlined, size: 18),
                               onPressed: () => _openFilePreview(context, f),
                             ),
-                            if (store.currentUser?.isCoachOrViewer != true)
-                              IconButton(
-                                tooltip: 'Supprimer',
-                                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                onPressed: () => store.deleteFile(f.id),
+                            IconButton(
+                              tooltip: 'Télécharger',
+                              icon: const Icon(Icons.download_outlined, size: 18),
+                              onPressed: () => _downloadFile(context, f),
+                            ),
+                            if (widget.store.currentUser?.isCoachOrViewer != true)
+                              PopupMenuButton<String>(
+                                iconSize: 18,
+                                onSelected: (action) {
+                                  if (action == 'version') _uploadNewVersion(context, f);
+                                  if (action == 'rename') _renameFileDialog(context, f);
+                                  if (action == 'delete') widget.store.deleteFile(f.id);
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(value: 'version', child: Text('Nouvelle version')),
+                                  PopupMenuItem(value: 'rename', child: Text('Renommer')),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Supprimer', style: TextStyle(color: Colors.redAccent)),
+                                  ),
+                                ],
                               ),
                           ],
                         ),
@@ -284,19 +511,37 @@ class FilesScreen extends StatelessWidget {
   }
 
   Future<void> _pickAndUploadFile(BuildContext context) async {
-    final picked = await FilePicker.pickFile();
-    if (picked == null) return;
-    final bytes = await picked.readAsBytes();
-
-    final ok = await store.uploadRealFile(name: picked.name, bytes: bytes);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ok ? 'Fichier « ${picked.name} » téléversé !' : 'Échec du téléversement.',
+    try {
+      final picked = await FilePicker.pickFile();
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > 18 * 1024 * 1024) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Fichier trop volumineux (max 18 Mo).')),
+          );
+        }
+        return;
+      }
+      setState(() => _uploading = true);
+      final ok = await widget.store.uploadRealFile(name: picked.name, bytes: bytes);
+      if (mounted) setState(() => _uploading = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              ok ? 'Fichier « ${picked.name} » téléversé !' : 'Échec du téléversement.',
+            ),
           ),
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _uploading = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du téléversement : $e')),
+        );
+      }
     }
   }
 
@@ -308,7 +553,7 @@ class FilesScreen extends StatelessWidget {
   }
 
   void _openFilePreview(BuildContext context, FileAssetItem f) {
-    final fileUrl = '${store.serverUrl}/api/mobile/files/${f.id}?inline=1';
+    final fileUrl = '${widget.store.serverUrl}/api/mobile/files/${f.id}?inline=1';
     final isImage = f.mimeType.startsWith('image/');
     final isText = _isTextFile(f);
 
@@ -331,6 +576,11 @@ class FilesScreen extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                       ),
+                    ),
+                    IconButton(
+                      tooltip: 'Télécharger',
+                      icon: const Icon(Icons.download_outlined, size: 20),
+                      onPressed: () => _downloadFile(context, f),
                     ),
                     IconButton(
                       tooltip: 'Copier le lien',
@@ -396,12 +646,12 @@ class FilesScreen extends StatelessWidget {
                                     color: const Color(0xFF4F46E5),
                                   ),
                                   const SizedBox(height: 12),
-                                  Text('${(f.size / 1024).round()} Ko · ${f.mimeType}'),
+                                  Text('${_formatSize(f.size)} · ${f.mimeType}'),
                                   const SizedBox(height: 12),
-                                  SelectableText(
-                                    fileUrl,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF818CF8)),
+                                  FilledButton.icon(
+                                    onPressed: () => _downloadFile(context, f),
+                                    icon: const Icon(Icons.download_outlined, size: 18),
+                                    label: const Text('Télécharger / Ouvrir'),
                                   ),
                                 ],
                               ),

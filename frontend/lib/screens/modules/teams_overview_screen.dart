@@ -156,6 +156,63 @@ class TeamsOverviewScreen extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 18),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Charge de travail par membre',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                ...store.users.map((u) {
+                  final doneIds = store.currentColumns.where((c) => c.isDone).map((c) => c.id).toSet();
+                  final assigned = store.currentTasks.where((t) => t.assigneeIds.contains(u.id)).toList();
+                  final active = assigned.where((t) => !doneIds.contains(t.columnId)).length;
+                  final late = assigned
+                      .where((t) =>
+                          !doneIds.contains(t.columnId) &&
+                          t.dueDate != null &&
+                          t.dueDate!.isBefore(DateTime.now()))
+                      .length;
+                  final ratio = store.currentTasks.isEmpty
+                      ? 0.0
+                      : (active / store.currentTasks.length).clamp(0.0, 1.0);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('${u.name} (${roleToString(u.role)})',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            Text(
+                              late > 0 ? '$active actives · $late retard(s)' : '$active active(s)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: late > 0 ? Colors.redAccent : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(value: ratio, minHeight: 5),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
         Wrap(
           spacing: 8,
           runSpacing: 8,

@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 const ai = require('./ai');
+const aiGenerator = require('./ai/generator');
 const mailer = require('./mailer');
 const scheduler = require('./mailer/scheduler');
 const assistant = require('./assistant');
@@ -1204,12 +1205,9 @@ app.post('/api/mobile/sync', async (req, res) => {
         const { projectId, name, mimeType, size, contentBase64 } = payload;
         const safeName = (name || 'fichier').replace(/[^a-zA-Z0-9._-]/g, '_');
         const storageKey = `${Date.now()}-${safeName}`;
-        let actualSize = Number(size) || 0;
-        if (contentBase64) {
-          const buf = Buffer.from(contentBase64, 'base64');
-          actualSize = buf.length;
-          fs.writeFileSync(path.join(UPLOADS_DIR, storageKey), buf);
-        }
+        const buf = contentBase64 ? Buffer.from(contentBase64, 'base64') : Buffer.alloc(0);
+        const actualSize = contentBase64 ? buf.length : (Number(size) || 0);
+        fs.writeFileSync(path.join(UPLOADS_DIR, storageKey), buf);
         const file = await prisma.file.create({
           data: {
             projectId,
@@ -1230,6 +1228,57 @@ app.post('/api/mobile/sync', async (req, res) => {
           include: { versions: true },
         });
         return res.json({ ok: true, data: file });
+      }
+
+      case 'UPLOAD_FILE_VERSION': {
+        if (isCoachOrViewer) {
+          return res.status(403).json({ ok: false, error: 'Permission refusée' });
+        }
+        const { fileId, mimeType, size, contentBase64 } = payload;
+        const existing = await prisma.file.findUnique({ where: { id: fileId } });
+        if (!existing) {
+          return res.status(404).json({ ok: false, error: 'Fichier introuvable' });
+        }
+        const nextVersion = (existing.currentVersion || 1) + 1;
+        const safeName = existing.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storageKey = `${Date.now()}-v${nextVersion}-${safeName}`;
+        const buf = contentBase64 ? Buffer.from(contentBase64, 'base64') : Buffer.alloc(0);
+        const actualSize = contentBase64 ? buf.length : (Number(size) || 0);
+        fs.writeFileSync(path.join(UPLOADS_DIR, storageKey), buf);
+        const updated = await prisma.file.update({
+          where: { id: fileId },
+          data: {
+            currentVersion: nextVersion,
+            size: actualSize,
+            ...(mimeType ? { mimeType } : {}),
+            versions: {
+              create: {
+                version: nextVersion,
+                storageKey,
+                size: actualSize,
+                uploaderId: userId,
+              },
+            },
+          },
+          include: { versions: { orderBy: { version: 'desc' } } },
+        });
+        return res.json({ ok: true, data: updated });
+      }
+
+      case 'RENAME_FILE': {
+        if (isCoachOrViewer) {
+          return res.status(403).json({ ok: false, error: 'Permission refusée' });
+        }
+        const { fileId, name } = payload;
+        const trimmed = String(name || '').trim();
+        if (!fileId || !trimmed) {
+          return res.status(400).json({ ok: false, error: 'Nom de fichier requis' });
+        }
+        const updated = await prisma.file.update({
+          where: { id: fileId },
+          data: { name: trimmed },
+        });
+        return res.json({ ok: true, data: updated });
       }
 
       case 'DELETE_FILE': {
@@ -1388,13 +1437,34 @@ app.post('/api/mobile/ai', async (req, res) => {
   }
 });
 
+app.post('/api/mobile/ai/generate', async (req, res) => {
+  try {
+    const { type, userId, payload = {} } = req.body || {};
+    if (!userId || !type) {
+      return res.status(400).json({ ok: false, error: 'userId et type requis' });
+    }
+    const role = await getUserRole(userId);
+    const result = await aiGenerator.generate({
+      prisma,
+      type,
+      userId,
+      role,
+      payload: payload || {},
+    });
+    return res.json({ ok: true, data: result });
+  } catch (error) {
+    const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 500;
+    return res.status(status).json({ ok: false, error: error.message });
+  }
+});
+
 // -------------------------------------------------------------
 // ASSISTANT D'AIDE (chatbot) : POST /api/mobile/assistant
 // -------------------------------------------------------------
 app.post('/api/mobile/assistant', async (req, res) => {
   try {
-    const { userId, message, history } = req.body || {};
-    const result = await assistant.ask({ prisma, userId, message, history });
+    const { userId, message, history, module } = req.body || {};
+    const result = await assistant.ask({ prisma, userId, message, history, module });
     return res.json({ ok: true, data: result });
   } catch (error) {
     const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 500;

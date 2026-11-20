@@ -37,6 +37,7 @@ class AssistantApiService {
     required String userId,
     required String message,
     List<AssistantMessage> history = const [],
+    String? module,
   }) async {
     try {
       final response = await _client.postJson(
@@ -45,6 +46,7 @@ class AssistantApiService {
           'userId': userId,
           'message': message,
           'history': history.map((m) => m.toJson()).toList(),
+          if (module != null) 'module': module,
         },
         timeout: const Duration(seconds: 25), // un appel LLM peut dépasser les 4 s par défaut
       );

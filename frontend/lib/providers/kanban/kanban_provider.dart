@@ -333,5 +333,60 @@ mixin KanbanProviderMixin on StudyFlowStoreBase {
     await hydrateFromPrisma();
     return true;
   }
+
+  Future<Map<String, dynamic>?> aiGenerateKanban({
+    required String prompt,
+    bool createNewProject = false,
+    String? projectName,
+  }) async {
+    if (currentUser == null || currentUser!.isCoachOrViewer) return null;
+    final res = await generateWithAi('AI_GENERATE_KANBAN', payload: {
+      'projectId': activeProject.id,
+      'prompt': prompt,
+      'createNewProject': createNewProject,
+      if (projectName != null && projectName.trim().isNotEmpty) 'projectName': projectName.trim(),
+    });
+    if (res != null) {
+      await hydrateFromPrisma();
+      if (res['projectId'] is String) {
+        activeProjectId = res['projectId'] as String;
+        notifyListeners();
+      }
+    }
+    return res;
+  }
+
+  Future<Map<String, dynamic>?> aiGenerateTask({
+    required String prompt,
+    String? columnId,
+  }) async {
+    if (currentUser == null || currentUser!.isCoachOrViewer) return null;
+    final res = await generateWithAi('AI_GENERATE_TASK', payload: {
+      'projectId': activeProject.id,
+      if (columnId != null) 'columnId': columnId,
+      'prompt': prompt,
+    });
+    if (res != null) await hydrateFromPrisma();
+    return res;
+  }
+
+  Future<Map<String, dynamic>?> aiGenerateSubtasks(String taskId) async {
+    if (currentUser == null || currentUser!.isCoachOrViewer) return null;
+    final res = await generateWithAi('AI_ADD_SUBTASKS', payload: {
+      'taskId': taskId,
+    });
+    if (res != null) await hydrateFromPrisma();
+    return res;
+  }
+
+  Future<Map<String, dynamic>?> aiGenerateColumns({required String prompt}) async {
+    if (currentUser == null || currentUser!.isCoachOrViewer) return null;
+    final res = await generateWithAi('AI_GENERATE_COLUMNS', payload: {
+      'projectId': activeProject.id,
+      'prompt': prompt,
+    });
+    if (res != null) await hydrateFromPrisma();
+    return res;
+  }
 }
 

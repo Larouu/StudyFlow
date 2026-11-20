@@ -131,6 +131,58 @@ class _CalendarReportsScreenState extends State<CalendarReportsScreen> {
                       module: 'calendar',
                       title: 'Assistant IA calendrier',
                     ),
+                    Builder(
+                      builder: (context) {
+                        final now = DateTime.now();
+                        final in7Days = now.add(const Duration(days: 7));
+                        final doneIds = store.currentColumns.where((c) => c.isDone).map((c) => c.id).toSet();
+                        final upcoming = store.currentTasks
+                            .where((t) =>
+                                t.dueDate != null &&
+                                !doneIds.contains(t.columnId) &&
+                                t.dueDate!.isAfter(now.subtract(const Duration(days: 1))) &&
+                                t.dueDate!.isBefore(in7Days))
+                            .toList()
+                          ..sort((a, b) => a.dueDate!.compareTo(b.dueDate!));
+                        if (upcoming.isEmpty) return const SizedBox.shrink();
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Échéances des 7 prochains jours (${upcoming.length})',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                const SizedBox(height: 6),
+                                ...upcoming.take(4).map(
+                                      (t) => Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.schedule, size: 14, color: Color(0xFF818CF8)),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(t.title,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(fontSize: 12)),
+                                            ),
+                                            Text(
+                                              '${t.dueDate!.day}/${t.dueDate!.month}',
+                                              style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [

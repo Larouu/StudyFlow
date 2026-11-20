@@ -77,6 +77,51 @@ class _KanbanScreenState extends State<KanbanScreen> {
           ),
         ),
 
+        // Barre d'avancement & santé WIP du projet
+        Builder(
+          builder: (context) {
+            final doneIds = columns.where((c) => c.isDone).map((c) => c.id).toSet();
+            final doneCount = allTasks.where((t) => doneIds.contains(t.columnId)).length;
+            final ratio = allTasks.isEmpty ? 0.0 : doneCount / allTasks.length;
+            final wipExceeded = columns.where(
+              (c) => c.wipLimit != null && allTasks.where((t) => t.columnId == c.id).length > c.wipLimit!,
+            ).length;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Avancement : ${(ratio * 100).round()}% ($doneCount/${allTasks.length})',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                            if (wipExceeded > 0)
+                              Text(
+                                '$wipExceeded colonne(s) > WIP',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(value: ratio, minHeight: 6),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+
         // Barre de filtres & actions
         Padding(
           padding: const EdgeInsets.all(16),
@@ -127,6 +172,55 @@ class _KanbanScreenState extends State<KanbanScreen> {
                   onPressed: () => _openColumnDialog(context),
                   icon: const Icon(Icons.view_column_outlined, size: 18),
                   label: const Text('Colonne'),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Génération IA',
+                  onSelected: (choice) {
+                    if (choice == 'kanban') _openAiKanbanDialog(context);
+                    if (choice == 'task') _openAiTaskDialog(context);
+                    if (choice == 'columns') _openAiColumnsDialog(context);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'kanban',
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(Icons.auto_awesome, color: Color(0xFF818CF8)),
+                        title: Text('Générer un Kanban complet IA'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'task',
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(Icons.add_task, color: Color(0xFF818CF8)),
+                        title: Text('Créer tâche + sous-tâches IA'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'columns',
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(Icons.view_week_outlined, color: Color(0xFF818CF8)),
+                        title: Text('Générer des colonnes IA'),
+                      ),
+                    ),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF312E81),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.auto_awesome, size: 16, color: Color(0xFFC4B5FD)),
+                        SizedBox(width: 6),
+                        Text('IA Générer', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ],
@@ -951,6 +1045,210 @@ class _KanbanScreenState extends State<KanbanScreen> {
             child: const Text('Supprimer'),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openAiKanbanDialog(BuildContext context) async {
+    final promptCtrl = TextEditingController();
+    final projectNameCtrl = TextEditingController();
+    var createNewProject = false;
+    final isOwner = widget.store.currentUser?.role == UserRole.owner;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Color(0xFF818CF8), size: 20),
+              SizedBox(width: 8),
+              Text('Générer un Kanban IA'),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: promptCtrl,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: 'Objectif ou sujet du projet',
+                    hintText: 'Ex : Application mobile de réservation avec paiement et tests',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (isOwner) ...[
+                  const SizedBox(height: 10),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: createNewProject,
+                    title: const Text('Créer un nouveau projet dédié', style: TextStyle(fontSize: 13)),
+                    onChanged: (v) => setLocal(() => createNewProject = v ?? false),
+                  ),
+                  if (createNewProject)
+                    TextField(
+                      controller: projectNameCtrl,
+                      decoration: const InputDecoration(labelText: 'Nom du nouveau projet (optionnel)'),
+                    ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Générer'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || promptCtrl.text.trim().isEmpty) return;
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Génération du tableau Kanban par l’IA en cours…')),
+    );
+    final res = await widget.store.aiGenerateKanban(
+      prompt: promptCtrl.text.trim(),
+      createNewProject: createNewProject,
+      projectName: projectNameCtrl.text.trim(),
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          res != null
+              ? 'Kanban IA créé : ${res['columnsCreated']} colonnes, ${res['tasksCreated']} tâches, ${res['subtasksCreated']} sous-tâches.'
+              : 'Échec de la génération Kanban IA.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAiTaskDialog(BuildContext context) async {
+    final promptCtrl = TextEditingController();
+    final cols = widget.store.currentColumns;
+    var selectedColId = cols.isNotEmpty ? cols.first.id : null;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.add_task, color: Color(0xFF818CF8), size: 20),
+              SizedBox(width: 8),
+              Text('Créer tâche + sous-tâches IA'),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: promptCtrl,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: 'Décrivez la tâche souhaitée',
+                    hintText: 'Ex : Mettre en place l’authentification JWT et les tests unitaires',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (cols.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedColId,
+                    decoration: const InputDecoration(labelText: 'Colonne cible'),
+                    items: cols.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                    onChanged: (v) => setLocal(() => selectedColId = v),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Créer avec IA'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || promptCtrl.text.trim().isEmpty) return;
+    final res = await widget.store.aiGenerateTask(
+      prompt: promptCtrl.text.trim(),
+      columnId: selectedColId,
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          res != null
+              ? 'Tâche IA créée avec ${res['subtasksCreated']} sous-tâches.'
+              : 'Échec de la création IA.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAiColumnsDialog(BuildContext context) async {
+    final promptCtrl = TextEditingController(text: 'Workflow agile avec QA et Validation');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.view_week_outlined, color: Color(0xFF818CF8), size: 20),
+            SizedBox(width: 8),
+            Text('Générer des colonnes IA'),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          child: TextField(
+            controller: promptCtrl,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Type de workflow souhaité',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.auto_awesome, size: 16),
+            label: const Text('Générer colonnes'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || promptCtrl.text.trim().isEmpty) return;
+    final res = await widget.store.aiGenerateColumns(prompt: promptCtrl.text.trim());
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          res != null
+              ? '${res['columnsCreated']} colonne(s) ajoutée(s) par l’IA.'
+              : 'Échec de la génération des colonnes.',
+        ),
       ),
     );
   }
