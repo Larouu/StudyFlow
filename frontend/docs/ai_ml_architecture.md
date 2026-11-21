@@ -6,6 +6,7 @@ use cases rather than a model provider directly. The shared result contract is
 the explanation, confidence, provenance, timestamp, and whether the result is a
 prediction.
 
+
 ## Capability matrix
 
 Every module exposes a deterministic local capability first. These capabilities
