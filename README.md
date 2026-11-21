@@ -65,9 +65,8 @@ npm start
 ```powershell
 cd frontend
 flutter pub get
-flutter run -d chrome
+flutter run -d edge
 ```
-> Sur Chrome (`kIsWeb`), l'application pointe automatiquement vers `http://localhost:3000` (et `http://10.0.2.2:3000` sur émulateur Android).
 
 ---
 
