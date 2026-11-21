@@ -1,4 +1,4 @@
-# Dependencies & build artifacts
+# Dependencies & build_artifacts
 backend/node_modules/
 backend/.env
 backend/prisma/*.db
@@ -12,7 +12,7 @@ frontend/build/
 frontend/.packages
 frontend/pubspec.lock
 
-# IDE & OS
+# IDE &  OS
 .DS_Store
 Thumbs.db
 *.iml
