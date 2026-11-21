@@ -49,7 +49,7 @@ StudyFlow/
 
 ---
 
-## 🚀 Démarrage Rapide
+# Démarrage Rapide
 
 ### 1. Initialiser & démarrer le Back-End (Terminal 1)
 ```powershell
