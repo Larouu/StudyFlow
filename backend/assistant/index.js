@@ -156,7 +156,7 @@ async function ask({ prisma, userId, message, history = [], module = null }) {
       .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE) })),
     { role: 'user', content: text },
   ];
-  // L'API exige que le premier message soit de l'utilisateur.
+
   while (messages.length && messages[0].role !== 'user') messages.shift();
 
   try {
