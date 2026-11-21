@@ -54,9 +54,11 @@ abstract class StudyFlowStoreBase extends ChangeNotifier {
   List<ProjectReportItem> reports = [];
   List<TrainingItem> trainings = StudyFlowSeedData.initialTrainings();
   List<TrainingEnrollmentItem> enrollments = StudyFlowSeedData.initialEnrollments();
+  List<TrainingResourceItem> trainingResources = [];
   List<CoachingSessionItem> coachingSessions = StudyFlowSeedData.initialSessions();
   List<CoachingGoalItem> coachingGoals = StudyFlowSeedData.initialGoals();
   List<SkillLevelItem> skillLevels = StudyFlowSeedData.initialSkills();
+  List<FeedbackItem> feedbacks = [];
 
   Future<String> askAssistant(
     String message, {
@@ -171,9 +173,11 @@ abstract class StudyFlowStoreBase extends ChangeNotifier {
       reports = snapshot.reports;
       trainings = snapshot.trainings;
       enrollments = snapshot.enrollments;
+      trainingResources = snapshot.trainingResources;
       coachingSessions = snapshot.coachingSessions;
       coachingGoals = snapshot.coachingGoals;
       skillLevels = snapshot.skillLevels;
+      feedbacks = snapshot.feedbacks;
     } catch (e) {
       debugPrint('Erreur synchronisation espace de travail: $e');
     }

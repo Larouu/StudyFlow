@@ -141,16 +141,19 @@ mixin CoachingProviderMixin on StudyFlowStoreBase {
     required int durationMin,
     required String mode,
     DateTime? proposedSlot,
+    List<DateTime>? proposedSlots,
   }) async {
     if (currentUser == null) return;
-    final slot = (proposedSlot ?? DateTime.now().add(const Duration(days: 2))).toIso8601String();
+    final slots = (proposedSlots != null && proposedSlots.isNotEmpty)
+        ? proposedSlots.map((s) => s.toIso8601String()).toList()
+        : [(proposedSlot ?? DateTime.now().add(const Duration(days: 2))).toIso8601String()];
     coachingSessions = [
       CoachingSessionItem(
         id: 'cs-${DateTime.now().millisecondsSinceEpoch}',
         coachId: coachId,
         coacheeId: currentUser!.id,
         topic: topic,
-        proposedSlots: [slot],
+        proposedSlots: slots,
         durationMin: durationMin,
         mode: mode,
         status: 'REQUESTED',
@@ -162,7 +165,7 @@ mixin CoachingProviderMixin on StudyFlowStoreBase {
     await coachingRepo.sync('REQUEST_COACHING', currentUser!.id, {
       'coachId': coachId,
       'topic': topic,
-      'proposedSlots': [slot],
+      'proposedSlots': slots,
       'durationMin': durationMin,
       'mode': mode,
       'projectId': activeProject.id,
@@ -183,6 +186,7 @@ mixin CoachingProviderMixin on StudyFlowStoreBase {
       'sessionId': sessionId,
       'scheduledAt': slotIso,
     });
+    await hydrateFromPrisma();
   }
 
   Future<void> completeCoaching(String sessionId, String sharedReport, String? privateNotes) async {
@@ -211,6 +215,106 @@ mixin CoachingProviderMixin on StudyFlowStoreBase {
     notifyListeners();
 
     await coachingRepo.sync('DELETE_COACHING', currentUser!.id, {'sessionId': sessionId});
+  }
+
+  Future<void> rescheduleCoaching(String sessionId, String slotIso) async {
+    if (currentUser == null) return;
+    coachingSessions = coachingSessions
+        .map((s) => s.id == sessionId
+            ? s.copyWith(status: 'RESCHEDULED', scheduledAt: DateTime.tryParse(slotIso) ?? DateTime.now())
+            : s)
+        .toList();
+    notifyListeners();
+
+    await coachingRepo.sync('RESCHEDULE_COACHING', currentUser!.id, {
+      'sessionId': sessionId,
+      'scheduledAt': slotIso,
+    });
+    await hydrateFromPrisma();
+  }
+
+  Future<void> cancelCoaching(String sessionId) async {
+    if (currentUser == null) return;
+    coachingSessions = coachingSessions
+        .map((s) => s.id == sessionId ? s.copyWith(status: 'CANCELLED') : s)
+        .toList();
+    notifyListeners();
+
+    await coachingRepo.sync('CANCEL_COACHING', currentUser!.id, {'sessionId': sessionId});
+  }
+
+  Future<void> addFeedback({
+    required String targetType,
+    required String targetId,
+    required int rating,
+    String? comment,
+  }) async {
+    if (currentUser == null) return;
+    final fb = FeedbackItem(
+      id: 'fb-${DateTime.now().millisecondsSinceEpoch}',
+      targetType: targetType,
+      targetId: targetId,
+      authorId: currentUser!.id,
+      rating: rating,
+      comment: comment,
+      createdAt: DateTime.now(),
+    );
+    feedbacks = [fb, ...feedbacks];
+    notifyListeners();
+
+    await coachingRepo.sync('ADD_FEEDBACK', currentUser!.id, {
+      'targetType': targetType,
+      'targetId': targetId,
+      'rating': rating,
+      'comment': comment,
+    });
+    await hydrateFromPrisma();
+  }
+
+  Future<void> addTrainingResource({
+    required String trainingId,
+    required String title,
+    String? url,
+  }) async {
+    if (currentUser == null) return;
+    final res = TrainingResourceItem(
+      id: 'res-${DateTime.now().millisecondsSinceEpoch}',
+      trainingId: trainingId,
+      title: title,
+      url: url,
+    );
+    trainingResources = [...trainingResources, res];
+    notifyListeners();
+
+    await coachingRepo.sync('ADD_TRAINING_RESOURCE', currentUser!.id, {
+      'trainingId': trainingId,
+      'title': title,
+      'url': url,
+    });
+    await hydrateFromPrisma();
+  }
+
+  Future<void> deleteTrainingResource(String resourceId) async {
+    if (currentUser == null) return;
+    trainingResources = trainingResources.where((r) => r.id != resourceId).toList();
+    notifyListeners();
+
+    await coachingRepo.sync('DELETE_TRAINING_RESOURCE', currentUser!.id, {
+      'resourceId': resourceId,
+    });
+  }
+
+  Future<void> markTrainingAttendance(String enrollmentId, bool attended) async {
+    if (currentUser == null) return;
+    enrollments = enrollments
+        .map((e) => e.id == enrollmentId ? e.copyWith(attended: attended) : e)
+        .toList();
+    notifyListeners();
+
+    await coachingRepo.sync('MARK_ATTENDANCE', currentUser!.id, {
+      'enrollmentId': enrollmentId,
+      'attended': attended,
+    });
   }
 
   Future<void> updateGoalProgress(String goalId, int progress) async {

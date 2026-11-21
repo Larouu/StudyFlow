@@ -19,9 +19,11 @@ class WorkspaceSnapshot {
     required this.reports,
     required this.trainings,
     required this.enrollments,
+    this.trainingResources = const [],
     required this.coachingSessions,
     required this.coachingGoals,
     required this.skillLevels,
+    this.feedbacks = const [],
   });
 
   final String? teamName;
@@ -39,9 +41,11 @@ class WorkspaceSnapshot {
   final List<ProjectReportItem> reports;
   final List<TrainingItem> trainings;
   final List<TrainingEnrollmentItem> enrollments;
+  final List<TrainingResourceItem> trainingResources;
   final List<CoachingSessionItem> coachingSessions;
   final List<CoachingGoalItem> coachingGoals;
   final List<SkillLevelItem> skillLevels;
+  final List<FeedbackItem> feedbacks;
 }
 
 /// Repository de synchronisation des données métier StudyFlow.
@@ -105,6 +109,9 @@ class StudyFlowRepository {
       enrollments: (data['enrollments'] as List? ?? [])
           .map((e) => TrainingEnrollmentItem.fromJson(e as Map<String, dynamic>))
           .toList(),
+      trainingResources: (data['trainingResources'] as List? ?? [])
+          .map((e) => TrainingResourceItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
       coachingSessions: (data['coachingSessions'] as List? ?? [])
           .map((e) => CoachingSessionItem.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -113,6 +120,9 @@ class StudyFlowRepository {
           .toList(),
       skillLevels: (data['skillLevels'] as List? ?? [])
           .map((e) => SkillLevelItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      feedbacks: (data['feedbacks'] as List? ?? [])
+          .map((e) => FeedbackItem.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }

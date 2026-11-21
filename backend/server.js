@@ -230,6 +230,26 @@ app.get('/api/mobile/bootstrap', async (req, res) => {
     const taskIds = tasks.map((t) => t.id);
     const taskFilter = activeUserId ? { in: taskIds } : undefined;
 
+    const coachingSessions = await prisma.coachingSession.findMany({
+      where: activeUserId
+        ? {
+            OR: [
+              ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
+              { coachId: activeUserId },
+              { coacheeId: activeUserId },
+            ],
+          }
+        : undefined,
+      orderBy: { createdAt: 'desc' },
+    });
+    coachingSessions.forEach((s) => {
+      if (s.coachId && !memberUserIds.includes(s.coachId)) memberUserIds.push(s.coachId);
+      if (s.coacheeId && !memberUserIds.includes(s.coacheeId)) memberUserIds.push(s.coacheeId);
+    });
+
+    const coachingSessionIds = coachingSessions.map((s) => s.id);
+    const feedbackTargetIds = [...trainingIds, ...coachingSessionIds];
+
     const [
       users,
       columns,
@@ -241,9 +261,10 @@ app.get('/api/mobile/bootstrap', async (req, res) => {
       activities,
       reports,
       enrollments,
-      coachingSessions,
+      trainingResources,
       coachingGoals,
       skillLevels,
+      feedbacks,
     ] = await Promise.all([
       prisma.user.findMany(
         activeUserId ? { where: { id: { in: memberUserIds } } } : undefined
@@ -283,16 +304,20 @@ app.get('/api/mobile/bootstrap', async (req, res) => {
       prisma.trainingEnrollment.findMany(
         trainingFilter ? { where: { trainingId: trainingFilter } } : undefined
       ),
-      prisma.coachingSession.findMany({
-        where: teamFilter ? { teamId: teamFilter } : undefined,
-        orderBy: { createdAt: 'desc' },
-      }),
+      prisma.trainingResource.findMany(
+        trainingFilter ? { where: { trainingId: trainingFilter } } : undefined
+      ),
       prisma.coachingGoal.findMany({
         where: teamFilter ? { teamId: teamFilter } : undefined,
         orderBy: { createdAt: 'desc' },
       }),
       prisma.skillLevel.findMany(
         teamFilter ? { where: { teamId: teamFilter } } : undefined
+      ),
+      prisma.feedback.findMany(
+        activeUserId
+          ? { where: { targetId: { in: feedbackTargetIds } }, orderBy: { createdAt: 'desc' } }
+          : { orderBy: { createdAt: 'desc' } }
       ),
     ]);
 
@@ -375,9 +400,11 @@ app.get('/api/mobile/bootstrap', async (req, res) => {
         reports,
         trainings,
         enrollments,
+        trainingResources,
         coachingSessions: safeCoachingSessions,
         coachingGoals,
         skillLevels,
+        feedbacks,
       },
     });
   } catch (error) {
@@ -1045,6 +1072,90 @@ app.post('/api/mobile/sync', async (req, res) => {
         }
         await prisma.coachingSession.delete({ where: { id: payload.sessionId } });
         return res.json({ ok: true });
+      }
+
+      case 'RESCHEDULE_COACHING': {
+        const { sessionId, scheduledAt } = payload;
+        const existing = await prisma.coachingSession.findUnique({ where: { id: sessionId } });
+        if (!existing || (existing.coachId !== userId && role !== 'OWNER')) {
+          return res.status(403).json({ ok: false, error: 'Seul le coach peut reprogrammer cette séance.' });
+        }
+        const safeRoom = String(sessionId).replace(/[^a-zA-Z0-9]/g, '').slice(-10);
+        const session = await prisma.coachingSession.update({
+          where: { id: sessionId },
+          data: {
+            status: 'RESCHEDULED',
+            scheduledAt: new Date(scheduledAt),
+            meetingUrl: existing.meetingUrl || `https://meet.jit.si/studyflow-coaching-${safeRoom}`,
+          },
+        });
+        return res.json({ ok: true, data: session });
+      }
+
+      case 'CANCEL_COACHING': {
+        const { sessionId } = payload;
+        const existing = await prisma.coachingSession.findUnique({ where: { id: sessionId } });
+        if (!existing || (existing.coachId !== userId && existing.coacheeId !== userId && role !== 'OWNER')) {
+          return res.status(403).json({ ok: false, error: 'Permission refusée' });
+        }
+        const session = await prisma.coachingSession.update({
+          where: { id: sessionId },
+          data: { status: 'CANCELLED' },
+        });
+        return res.json({ ok: true, data: session });
+      }
+
+      case 'ADD_FEEDBACK': {
+        const { targetType, targetId, rating, comment } = payload;
+        const safeRating = Math.min(5, Math.max(1, Number(rating) || 5));
+        const feedback = await prisma.feedback.create({
+          data: {
+            targetType: targetType === 'TRAINING' ? 'TRAINING' : 'SESSION',
+            targetId,
+            authorId: userId,
+            rating: safeRating,
+            comment: comment ? String(comment).trim() : null,
+          },
+        });
+        return res.json({ ok: true, data: feedback });
+      }
+
+      case 'ADD_TRAINING_RESOURCE': {
+        const canManage = role === 'COACH' || role === 'OWNER';
+        if (!canManage) {
+          return res.status(403).json({ ok: false, error: 'Permission refusée' });
+        }
+        const { trainingId, title, url } = payload;
+        const resource = await prisma.trainingResource.create({
+          data: {
+            trainingId,
+            title: String(title || 'Ressource').trim(),
+            url: url ? String(url).trim() : null,
+          },
+        });
+        return res.json({ ok: true, data: resource });
+      }
+
+      case 'DELETE_TRAINING_RESOURCE': {
+        const canManage = role === 'COACH' || role === 'OWNER';
+        if (!canManage) {
+          return res.status(403).json({ ok: false, error: 'Permission refusée' });
+        }
+        await prisma.trainingResource.delete({ where: { id: payload.resourceId } }).catch(() => null);
+        return res.json({ ok: true });
+      }
+
+      case 'MARK_ATTENDANCE': {
+        const canManage = role === 'COACH' || role === 'OWNER';
+        if (!canManage) {
+          return res.status(403).json({ ok: false, error: 'Permission refusée' });
+        }
+        const { enrollmentId, attended } = payload;
+        const updated = await prisma.trainingEnrollment.update({
+          where: { id: enrollmentId },
+          data: { attended: Boolean(attended) },
+        });
+        return res.json({ ok: true, data: updated });
       }
 
       case 'DELETE_GOAL': {

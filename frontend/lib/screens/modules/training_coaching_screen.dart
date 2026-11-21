@@ -178,6 +178,77 @@ class TrainingCoachingScreen extends StatelessWidget {
                                             },
                                       child: Text(isFull ? 'Formation complète' : 'S\'inscrire à la formation'),
                                     ),
+                                  const SizedBox(height: 10),
+                                  // Ressources pédagogiques
+                                  ...() {
+                                    final resources = store.trainingResources
+                                        .where((r) => r.trainingId == tr.id)
+                                        .toList();
+                                    final trFeedbacks = store.feedbacks
+                                        .where((f) => f.targetType == 'TRAINING' && f.targetId == tr.id)
+                                        .toList();
+                                    return [
+                                      if (resources.isNotEmpty) ...[
+                                        const Text('Ressources :',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        const SizedBox(height: 4),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 4,
+                                          children: resources
+                                              .map((r) => InputChip(
+                                                    avatar: const Icon(Icons.link, size: 14),
+                                                    label: Text(r.title, style: const TextStyle(fontSize: 11)),
+                                                    onPressed: r.url != null && r.url!.isNotEmpty
+                                                        ? () => _openMeeting(r.url!, context)
+                                                        : null,
+                                                    onDeleted: canManageTraining
+                                                        ? () => store.deleteTrainingResource(r.id)
+                                                        : null,
+                                                  ))
+                                              .toList(),
+                                        ),
+                                        const SizedBox(height: 6),
+                                      ],
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        children: [
+                                          if (canManageTraining) ...[
+                                            ActionChip(
+                                              avatar: const Icon(Icons.attach_file, size: 15),
+                                              label: const Text('Ressource', style: TextStyle(fontSize: 11)),
+                                              onPressed: () => _openAddResourceDialog(context, tr.id),
+                                            ),
+                                            ActionChip(
+                                              avatar: const Icon(Icons.fact_check_outlined, size: 15),
+                                              label: Text(
+                                                'Présences (${enrolled.where((e) => e.attended).length}/${enrolled.length})',
+                                                style: const TextStyle(fontSize: 11),
+                                              ),
+                                              onPressed: () => _openAttendanceDialog(context, tr, enrolled),
+                                            ),
+                                          ],
+                                          if (isEnrolled || canManageTraining)
+                                            ActionChip(
+                                              avatar: const Icon(Icons.star_outline, size: 15, color: Colors.amber),
+                                              label: Text(
+                                                trFeedbacks.isEmpty
+                                                    ? 'Laisser un avis'
+                                                    : 'Avis (${trFeedbacks.length} · ${(trFeedbacks.map((f) => f.rating).reduce((a, b) => a + b) / trFeedbacks.length).toStringAsFixed(1)}★)',
+                                                style: const TextStyle(fontSize: 11),
+                                              ),
+                                              onPressed: () => _openFeedbackDialog(
+                                                context,
+                                                targetType: 'TRAINING',
+                                                targetId: tr.id,
+                                                existing: trFeedbacks,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ];
+                                  }(),
                                 ],
                               ),
                             ),
@@ -215,6 +286,14 @@ class TrainingCoachingScreen extends StatelessWidget {
                             (u) => u.id == cs.coacheeId,
                             orElse: () => user,
                           );
+                          final coach = store.users.firstWhere(
+                            (u) => u.id == cs.coachId,
+                            orElse: () => user,
+                          );
+                          final slotDate = cs.scheduledAt ??
+                              (cs.proposedSlots.isNotEmpty
+                                  ? DateTime.tryParse(cs.proposedSlots.first)
+                                  : null);
 
                           return Card(
                             child: Padding(
@@ -229,7 +308,8 @@ class TrainingCoachingScreen extends StatelessWidget {
                                       Text('${cs.durationMin} min · ${cs.mode}',
                                           style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                       const Spacer(),
-                                      Text('Étudiant : ${coachee.name}', style: const TextStyle(fontSize: 11)),
+                                      Text('Coach : ${coach.name} · Étudiant : ${coachee.name}',
+                                          style: const TextStyle(fontSize: 11)),
                                       if (isCoachAuthor ||
                                           user.id == cs.coacheeId ||
                                           user.role == UserRole.owner)
@@ -242,6 +322,15 @@ class TrainingCoachingScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(cs.topic, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                  if (slotDate != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${cs.scheduledAt != null ? 'Confirmé le' : 'Créneau proposé :'} '
+                                      '${slotDate.day.toString().padLeft(2, '0')}/${slotDate.month.toString().padLeft(2, '0')}/${slotDate.year} '
+                                      'à ${slotDate.hour.toString().padLeft(2, '0')}:${slotDate.minute.toString().padLeft(2, '0')}',
+                                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    ),
+                                  ],
                                   if (cs.mode == 'ONLINE' &&
                                       cs.status == 'CONFIRMED' &&
                                       cs.meetingUrl != null) ...[
@@ -339,24 +428,107 @@ class TrainingCoachingScreen extends StatelessWidget {
                                       ),
                                     ),
 
-                                  if (isCoachAuthor && cs.status == 'REQUESTED') ...[
+                                  if (isCoachAuthor && (cs.status == 'REQUESTED' || cs.status == 'RESCHEDULED')) ...[
                                     const SizedBox(height: 10),
-                                    FilledButton(
-                                      onPressed: () => store.confirmCoaching(
-                                        cs.id,
-                                        cs.proposedSlots.isNotEmpty
-                                            ? cs.proposedSlots.first
-                                            : DateTime.now().add(const Duration(days: 2)).toIso8601String(),
+                                    if (cs.proposedSlots.length > 1 && cs.status == 'REQUESTED') ...[
+                                      const Text('Créneaux proposés :',
+                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 4),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        children: cs.proposedSlots.map((slotIso) {
+                                          final dt = DateTime.tryParse(slotIso);
+                                          final label = dt != null
+                                              ? '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
+                                              : slotIso;
+                                          return ActionChip(
+                                            avatar: const Icon(Icons.check, size: 15),
+                                            label: Text('Confirmer $label', style: const TextStyle(fontSize: 11)),
+                                            onPressed: () => store.confirmCoaching(cs.id, slotIso),
+                                          );
+                                        }).toList(),
                                       ),
-                                      child: const Text('Confirmer le créneau'),
+                                      const SizedBox(height: 6),
+                                    ],
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        if (cs.status == 'REQUESTED' && cs.proposedSlots.length <= 1)
+                                          FilledButton(
+                                            onPressed: () => store.confirmCoaching(
+                                              cs.id,
+                                              cs.proposedSlots.isNotEmpty
+                                                  ? cs.proposedSlots.first
+                                                  : DateTime.now().add(const Duration(days: 2)).toIso8601String(),
+                                            ),
+                                            child: const Text('Confirmer le créneau'),
+                                          ),
+                                        OutlinedButton.icon(
+                                          onPressed: () => _pickRescheduleSlot(context, cs),
+                                          icon: const Icon(Icons.schedule, size: 16),
+                                          label: const Text('Reprogrammer'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => store.cancelCoaching(cs.id),
+                                          style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                                          child: const Text('Annuler'),
+                                        ),
+                                      ],
                                     ),
                                   ],
-                                  if (isCoachAuthor && cs.status == 'CONFIRMED') ...[
-                                    const SizedBox(height: 10),
-                                    FilledButton(
-                                      onPressed: () => _openCompleteCoaching(context, cs),
-                                      child: const Text('Clôturer & Rédiger la synthèse'),
+                                  if (!isCoachAuthor &&
+                                      user.id == cs.coacheeId &&
+                                      (cs.status == 'REQUESTED' || cs.status == 'RESCHEDULED')) ...[
+                                    const SizedBox(height: 8),
+                                    TextButton.icon(
+                                      onPressed: () => store.cancelCoaching(cs.id),
+                                      icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                                      label: const Text('Annuler ma demande', style: TextStyle(color: Colors.redAccent)),
                                     ),
+                                  ],
+                                  if (isCoachAuthor && (cs.status == 'CONFIRMED' || cs.status == 'RESCHEDULED')) ...[
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        FilledButton(
+                                          onPressed: () => _openCompleteCoaching(context, cs),
+                                          child: const Text('Clôturer & Rédiger la synthèse'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: () => _pickRescheduleSlot(context, cs),
+                                          icon: const Icon(Icons.schedule, size: 16),
+                                          label: const Text('Reprogrammer'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                  if (cs.status == 'DONE') ...[
+                                    const SizedBox(height: 8),
+                                    ...() {
+                                      final csFeedbacks = store.feedbacks
+                                          .where((f) => f.targetType == 'SESSION' && f.targetId == cs.id)
+                                          .toList();
+                                      return [
+                                        ActionChip(
+                                          avatar: const Icon(Icons.star_outline, size: 15, color: Colors.amber),
+                                          label: Text(
+                                            csFeedbacks.isEmpty
+                                                ? 'Évaluer la séance'
+                                                : 'Avis (${csFeedbacks.length} · ${(csFeedbacks.map((f) => f.rating).reduce((a, b) => a + b) / csFeedbacks.length).toStringAsFixed(1)}★)',
+                                            style: const TextStyle(fontSize: 11),
+                                          ),
+                                          onPressed: () => _openFeedbackDialog(
+                                            context,
+                                            targetType: 'SESSION',
+                                            targetId: cs.id,
+                                            existing: csFeedbacks,
+                                          ),
+                                        ),
+                                      ];
+                                    }(),
                                   ],
                                 ],
                               ),
@@ -559,16 +731,22 @@ class TrainingCoachingScreen extends StatelessWidget {
 
   void _openRequestCoaching(BuildContext context, {String? initialTopic}) {
     final topicCtrl = TextEditingController(text: initialTopic ?? '');
-    final users = store.users;
-    final defaultCoach = users.firstWhere(
-      (u) => u.isCoach,
-      orElse: () => users.first,
-    );
+    final coaches = store.users.where((u) => u.isCoach).toList();
+    final selectableCoaches = coaches.isNotEmpty
+        ? coaches
+        : store.users.where((u) => u.id != store.currentUser?.id).toList();
+    final users = selectableCoaches.isNotEmpty ? selectableCoaches : store.users;
+    final defaultCoach = users.first;
     var selectedCoachId = defaultCoach.id;
     var selectedDuration = 45;
     var selectedMode = 'ONLINE';
-    var selectedSlot = DateTime.now().add(const Duration(days: 1));
-    selectedSlot = DateTime(selectedSlot.year, selectedSlot.month, selectedSlot.day, 14, 0);
+    final firstSlot = DateTime.now().add(const Duration(days: 1));
+    final proposedSlots = <DateTime>[
+      DateTime(firstSlot.year, firstSlot.month, firstSlot.day, 14, 0),
+    ];
+
+    String fmtSlot(DateTime dt) =>
+        '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} à ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
     showDialog(
       context: context,
@@ -629,36 +807,53 @@ class TrainingCoachingScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.event_outlined),
-                  title: Text(
-                    'Créneau : ${selectedSlot.day.toString().padLeft(2, '0')}/${selectedSlot.month.toString().padLeft(2, '0')}/${selectedSlot.year} à ${selectedSlot.hour.toString().padLeft(2, '0')}:${selectedSlot.minute.toString().padLeft(2, '0')}',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: ctx,
-                      initialDate: selectedSlot,
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                    );
-                    if (date == null || !ctx.mounted) return;
-                    final time = await showTimePicker(
-                      context: ctx,
-                      initialTime: TimeOfDay.fromDateTime(selectedSlot),
-                    );
-                    setStateDialog(() {
-                      selectedSlot = DateTime(
-                        date.year,
-                        date.month,
-                        date.day,
-                        time?.hour ?? selectedSlot.hour,
-                        time?.minute ?? selectedSlot.minute,
+                for (var i = 0; i < proposedSlots.length; i++)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_outlined),
+                    title: Text('Créneau ${i + 1} : ${fmtSlot(proposedSlots[i])}',
+                        style: const TextStyle(fontSize: 13)),
+                    trailing: proposedSlots.length > 1
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () => setStateDialog(() => proposedSlots.removeAt(i)),
+                          )
+                        : null,
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: ctx,
+                        initialDate: proposedSlots[i],
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
                       );
-                    });
-                  },
-                ),
+                      if (date == null || !ctx.mounted) return;
+                      final time = await showTimePicker(
+                        context: ctx,
+                        initialTime: TimeOfDay.fromDateTime(proposedSlots[i]),
+                      );
+                      setStateDialog(() {
+                        proposedSlots[i] = DateTime(
+                          date.year,
+                          date.month,
+                          date.day,
+                          time?.hour ?? proposedSlots[i].hour,
+                          time?.minute ?? proposedSlots[i].minute,
+                        );
+                      });
+                    },
+                  ),
+                if (proposedSlots.length < 3)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setStateDialog(() {
+                        final next = proposedSlots.last.add(const Duration(days: 1));
+                        proposedSlots.add(next);
+                      }),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Proposer un autre créneau (max 3)', style: TextStyle(fontSize: 12)),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -672,7 +867,7 @@ class TrainingCoachingScreen extends StatelessWidget {
                   topic: topicCtrl.text.trim(),
                   durationMin: selectedDuration,
                   mode: selectedMode,
-                  proposedSlot: selectedSlot,
+                  proposedSlots: proposedSlots,
                 );
                 Navigator.pop(ctx);
               },
@@ -1015,6 +1210,197 @@ class TrainingCoachingScreen extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _pickRescheduleSlot(BuildContext context, CoachingSessionItem cs) async {
+    final initial = cs.scheduledAt ?? DateTime.now().add(const Duration(days: 1));
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date == null || !context.mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    final nextSlot = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time?.hour ?? initial.hour,
+      time?.minute ?? initial.minute,
+    );
+    await store.rescheduleCoaching(cs.id, nextSlot.toIso8601String());
+  }
+
+  void _openAddResourceDialog(BuildContext context, String trainingId) {
+    final titleCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ajouter une ressource'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              decoration: const InputDecoration(labelText: 'Titre', hintText: 'Ex: Slides Flutter'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: urlCtrl,
+              decoration: const InputDecoration(labelText: 'URL (optionnel)', hintText: 'https://...'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () async {
+              if (titleCtrl.text.trim().isEmpty) return;
+              await store.addTrainingResource(
+                trainingId: trainingId,
+                title: titleCtrl.text.trim(),
+                url: urlCtrl.text.trim().isEmpty ? null : urlCtrl.text.trim(),
+              );
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+            },
+            child: const Text('Ajouter'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openAttendanceDialog(
+    BuildContext context,
+    TrainingItem tr,
+    List<TrainingEnrollmentItem> enrolled,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: Text('Présences · ${tr.title}'),
+          content: SizedBox(
+            width: 360,
+            child: enrolled.isEmpty
+                ? const Text('Aucun inscrit pour le moment.')
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: enrolled.map((e) {
+                      final member = store.users.firstWhere(
+                        (u) => u.id == e.userId,
+                        orElse: () => store.currentUser!,
+                      );
+                      final current = store.enrollments.firstWhere(
+                        (item) => item.id == e.id,
+                        orElse: () => e,
+                      );
+                      return CheckboxListTile(
+                        title: Text(member.name, style: const TextStyle(fontSize: 13)),
+                        subtitle: Text(member.email, style: const TextStyle(fontSize: 11)),
+                        value: current.attended,
+                        onChanged: (val) async {
+                          await store.markTrainingAttendance(e.id, val ?? false);
+                          setStateDialog(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openFeedbackDialog(
+    BuildContext context, {
+    required String targetType,
+    required String targetId,
+    required List<FeedbackItem> existing,
+  }) {
+    var rating = 5;
+    final commentCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: Text(targetType == 'TRAINING' ? 'Avis sur la formation' : 'Avis sur la séance'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (existing.isNotEmpty) ...[
+                  const Text('Avis précédents :', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  ...existing.take(4).map((f) {
+                    final author = store.users.firstWhere(
+                      (u) => u.id == f.authorId,
+                      orElse: () => store.currentUser!,
+                    );
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '${author.name} (${f.rating}★) : ${f.comment?.isNotEmpty == true ? f.comment : 'Sans commentaire'}',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    );
+                  }),
+                  const Divider(),
+                ],
+                Row(
+                  children: [
+                    const Text('Note : ', style: TextStyle(fontSize: 13)),
+                    for (var s = 1; s <= 5; s++)
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        icon: Icon(
+                          s <= rating ? Icons.star : Icons.star_border,
+                          color: Colors.amber,
+                          size: 22,
+                        ),
+                        onPressed: () => setStateDialog(() => rating = s),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: commentCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Commentaire (optionnel)'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            FilledButton(
+              onPressed: () async {
+                await store.addFeedback(
+                  targetType: targetType,
+                  targetId: targetId,
+                  rating: rating,
+                  comment: commentCtrl.text.trim().isEmpty ? null : commentCtrl.text.trim(),
+                );
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+              },
+              child: const Text('Publier'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -1025,7 +1411,9 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     Color c = Colors.amber;
     if (status == 'CONFIRMED') c = Colors.blueAccent;
+    if (status == 'RESCHEDULED') c = Colors.deepOrangeAccent;
     if (status == 'DONE') c = Colors.teal;
+    if (status == 'CANCELLED') c = Colors.redAccent;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(

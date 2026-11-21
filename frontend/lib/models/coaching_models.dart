@@ -89,6 +89,14 @@ class TrainingEnrollmentItem {
   final String status;
   final bool attended;
 
+  TrainingEnrollmentItem copyWith({String? status, bool? attended}) => TrainingEnrollmentItem(
+        id: id,
+        trainingId: trainingId,
+        userId: userId,
+        status: status ?? this.status,
+        attended: attended ?? this.attended,
+      );
+
   factory TrainingEnrollmentItem.fromJson(Map<String, dynamic> json) => TrainingEnrollmentItem(
         id: json['id']?.toString() ?? '',
         trainingId: json['trainingId']?.toString() ?? '',
@@ -229,6 +237,60 @@ class SkillLevelItem {
         skill: json['skill']?.toString() ?? '',
         level: (json['level'] as num?)?.toInt() ?? 1,
         selfAssessed: json['selfAssessed'] == true,
+      );
+}
+
+class TrainingResourceItem {
+  const TrainingResourceItem({
+    required this.id,
+    required this.trainingId,
+    required this.title,
+    this.url,
+    this.fileId,
+  });
+
+  final String id;
+  final String trainingId;
+  final String title;
+  final String? url;
+  final String? fileId;
+
+  factory TrainingResourceItem.fromJson(Map<String, dynamic> json) => TrainingResourceItem(
+        id: json['id']?.toString() ?? '',
+        trainingId: json['trainingId']?.toString() ?? '',
+        title: json['title']?.toString() ?? '',
+        url: json['url']?.toString(),
+        fileId: json['fileId']?.toString(),
+      );
+}
+
+class FeedbackItem {
+  const FeedbackItem({
+    required this.id,
+    required this.targetType,
+    required this.targetId,
+    required this.authorId,
+    required this.rating,
+    this.comment,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String targetType; // TRAINING, SESSION
+  final String targetId;
+  final String authorId;
+  final int rating;
+  final String? comment;
+  final DateTime createdAt;
+
+  factory FeedbackItem.fromJson(Map<String, dynamic> json) => FeedbackItem(
+        id: json['id']?.toString() ?? '',
+        targetType: json['targetType']?.toString() ?? 'SESSION',
+        targetId: json['targetId']?.toString() ?? '',
+        authorId: json['authorId']?.toString() ?? '',
+        rating: (json['rating'] as num?)?.toInt() ?? 5,
+        comment: json['comment']?.toString(),
+        createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
       );
 }
 
